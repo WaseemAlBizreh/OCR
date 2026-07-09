@@ -1,4 +1,3 @@
-import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mrz/core/config/injection.dart';
 import 'package:mrz/main.dart';
@@ -8,10 +7,12 @@ void main() {
     await configureDependencies();
   });
 
-  testWidgets('shows loading while opening scanner', (tester) async {
+  testWidgets('shows home screen with both scanner options', (tester) async {
     await tester.pumpWidget(const MyApp());
-    await tester.pump();
+    await tester.pumpAndSettle();
 
-    expect(find.byType(CircularProgressIndicator), findsOneWidget);
+    expect(find.text('Choose a scanning mode'), findsOneWidget);
+    expect(find.text('MRZ Camera Scanner'), findsOneWidget);
+    expect(find.text('Arabic Document Scanner'), findsOneWidget);
   });
 }
