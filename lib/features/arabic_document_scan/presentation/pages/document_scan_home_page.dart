@@ -57,6 +57,7 @@ class _DocumentScanHomePageState extends State<DocumentScanHomePage> {
           ),
           const SizedBox(height: 8),
           DropdownButtonFormField<ArabicCountry>(
+            isExpanded: true,
             initialValue: _country,
             decoration: const InputDecoration(
               border: OutlineInputBorder(),
@@ -68,6 +69,7 @@ class _DocumentScanHomePageState extends State<DocumentScanHomePage> {
                     value: country,
                     child: Text(
                       '${country.englishName} (${country.arabicName})',
+                      overflow: TextOverflow.ellipsis,
                     ),
                   ),
                 )
