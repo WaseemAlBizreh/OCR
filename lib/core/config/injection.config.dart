@@ -18,6 +18,8 @@ import '../../features/arabic_document_scan/data/document_scan_service.dart'
     as _i942;
 import '../../features/arabic_document_scan/data/generic_arabic_extractor.dart'
     as _i516;
+import '../../features/arabic_document_scan/data/opencv_image_enhancer.dart'
+    as _i329;
 import '../../features/arabic_document_scan/data/passport_mrz_extractor.dart'
     as _i540;
 
@@ -29,6 +31,9 @@ _i174.GetIt $initGetIt(
 }) {
   final gh = _i526.GetItHelper(getIt, environment, environmentFilter);
   gh.lazySingleton<_i1054.ArabicOcrEngine>(() => _i1054.ArabicOcrEngine());
+  gh.lazySingleton<_i329.OpenCvImageEnhancer>(
+    () => _i329.OpenCvImageEnhancer(),
+  );
   gh.lazySingleton<_i516.GenericArabicExtractor>(
     () => _i516.GenericArabicExtractor(gh<_i1054.ArabicOcrEngine>()),
   );
@@ -39,6 +44,7 @@ _i174.GetIt $initGetIt(
     () => _i942.DocumentScanService(
       gh<_i540.PassportMrzExtractor>(),
       gh<_i516.GenericArabicExtractor>(),
+      gh<_i329.OpenCvImageEnhancer>(),
     ),
   );
   return getIt;

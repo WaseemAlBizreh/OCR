@@ -24,6 +24,8 @@ dependencies:
   image_picker: ^1.1.2
   flutter_tesseract_ocr: ^0.4.31
   google_mlkit_text_recognition: ^0.15.1
+  opencv_dart: ^2.2.1+4
+  path_provider: ^2.1.5
 
 dependency_overrides:
   google_mlkit_text_recognition: ^0.15.1
@@ -51,3 +53,17 @@ flutter:
     - assets/icon/
     - assets/tessdata/
     - assets/tessdata_config.json
+
+hooks:
+  user_defines:
+    dartcv4:
+      include_modules:
+        - imgcodecs
+        - imgproc
+      exclude_modules:
+        - dnn
+        - highgui
+        - videoio
+        - stitching
+        - objdetect
+        - photo

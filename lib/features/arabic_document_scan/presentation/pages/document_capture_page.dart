@@ -6,6 +6,7 @@ import 'package:mrz/features/arabic_document_scan/data/document_scan_service.dar
 import 'package:mrz/features/arabic_document_scan/domain/document_type.dart';
 import 'package:mrz/features/arabic_document_scan/domain/id_card_side.dart';
 import 'package:mrz/features/arabic_document_scan/presentation/widgets/document_result_sheet.dart';
+import 'package:mrz/features/arabic_document_scan/presentation/widgets/enhanced_image_preview_sheet.dart';
 import 'package:permission_handler/permission_handler.dart';
 
 @RoutePage()
@@ -29,6 +30,7 @@ class _DocumentCapturePageState extends State<DocumentCapturePage> {
   final _picker = ImagePicker();
   bool _isProcessing = false;
   String? _error;
+  String _processingLabel = 'Processing...';
 
   DocumentScanService get _scanService => locator<DocumentScanService>();
 
@@ -53,6 +55,7 @@ class _DocumentCapturePageState extends State<DocumentCapturePage> {
 
     setState(() {
       _isProcessing = true;
+      _processingLabel = 'Enhancing image...';
       _error = null;
     });
 
@@ -66,9 +69,37 @@ class _DocumentCapturePageState extends State<DocumentCapturePage> {
         return;
       }
 
+      final preview = await _scanService.prepareImage(picked.path);
+
+      if (!mounted) return;
+      setState(() => _isProcessing = false);
+
+      final action = await EnhancedImagePreviewSheet.show(
+        context,
+        previewPath: preview.previewPath,
+        originalPath: preview.originalPath,
+        warning: preview.warning,
+      );
+
+      if (!mounted) return;
+
+      if (action != ImagePreviewAction.accept) {
+        if (preview.isEnhanced) {
+          await _scanService.discardPreparedImage(preview.previewPath);
+        }
+        return;
+      }
+
+      setState(() {
+        _isProcessing = true;
+        _processingLabel = 'Scanning document...';
+      });
+
       final result = await _scanService.scan(
         documentType: widget.documentType,
-        imagePath: picked.path,
+        imagePath: preview.originalPath,
+        ocrImagePath: preview.previewPath,
+        enhancementWarning: preview.enhancementFailed ? preview.warning : null,
         countryCode: widget.countryCode,
         idCardSide: widget.idCardSide,
       );
@@ -119,7 +150,14 @@ class _DocumentCapturePageState extends State<DocumentCapturePage> {
             ],
             const Spacer(),
             if (_isProcessing)
-              const Center(child: CircularProgressIndicator())
+              Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const CircularProgressIndicator(),
+                  const SizedBox(height: 12),
+                  Text(_processingLabel),
+                ],
+              )
             else ...[
               FilledButton.icon(
                 onPressed: () => _pickAndScan(ImageSource.camera),
