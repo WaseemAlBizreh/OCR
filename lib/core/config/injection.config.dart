@@ -45,6 +45,7 @@ _i174.GetIt $initGetIt(
       gh<_i540.PassportMrzExtractor>(),
       gh<_i516.GenericArabicExtractor>(),
       gh<_i329.OpenCvImageEnhancer>(),
+      gh<_i1054.ArabicOcrEngine>(),
     ),
   );
   return getIt;

@@ -62,11 +62,41 @@ class ArabicOcrEngine {
     try {
       if (!await File(imagePath).exists()) return null;
 
+      final merged = <String>[];
+      for (final psm in const ['6', '11', '3']) {
+        final text = await _recognizeWithTesseractPsm(imagePath, psm);
+        if (text != null && text.isNotEmpty) {
+          merged.add(text);
+        }
+      }
+
+      if (merged.isEmpty) return null;
+
+      var result = merged.first;
+      for (var i = 1; i < merged.length; i++) {
+        result = _mergeUniqueLines(result, merged[i]);
+      }
+      return result;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// Fast Tesseract-only check to compare preprocessing variants.
+  Future<int> estimateOcrQuality(String imagePath) async {
+    final text = await _recognizeWithTesseractPsm(imagePath, '6');
+    if (text == null || text.isEmpty) return 0;
+    return _cleanupTesseractText(text).length;
+  }
+
+  Future<String?> _recognizeWithTesseractPsm(String imagePath, String psm) async {
+    try {
       final text = await FlutterTesseractOcr.extractText(
         imagePath,
         language: 'ara+eng',
-        args: const {
-          'psm': '3',
+        args: {
+          'psm': psm,
+          'oem': '1',
           'preserve_interword_spaces': '1',
         },
       );

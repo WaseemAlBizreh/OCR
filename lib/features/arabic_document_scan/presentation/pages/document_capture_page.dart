@@ -5,6 +5,7 @@ import 'package:mrz/core/config/injection.dart';
 import 'package:mrz/features/arabic_document_scan/data/document_scan_service.dart';
 import 'package:mrz/features/arabic_document_scan/domain/document_type.dart';
 import 'package:mrz/features/arabic_document_scan/domain/id_card_side.dart';
+import 'package:mrz/features/arabic_document_scan/domain/image_enhancement_preview.dart';
 import 'package:mrz/features/arabic_document_scan/presentation/widgets/document_result_sheet.dart';
 import 'package:mrz/features/arabic_document_scan/presentation/widgets/enhanced_image_preview_sheet.dart';
 import 'package:permission_handler/permission_handler.dart';
@@ -74,19 +75,18 @@ class _DocumentCapturePageState extends State<DocumentCapturePage> {
       if (!mounted) return;
       setState(() => _isProcessing = false);
 
-      final action = await EnhancedImagePreviewSheet.show(
+      final selection = await showEnhancedImagePreview(
         context,
-        previewPath: preview.previewPath,
-        originalPath: preview.originalPath,
-        warning: preview.warning,
+        preview: preview,
       );
 
       if (!mounted) return;
 
-      if (action != ImagePreviewAction.accept) {
-        if (preview.isEnhanced) {
-          await _scanService.discardPreparedImage(preview.previewPath);
-        }
+      if (selection == null ||
+          selection.action != ImagePreviewAction.accept) {
+        await _scanService.discardPreparedImages(
+          selection?.allGeneratedPaths ?? preview.generatedTempPaths,
+        );
         return;
       }
 
@@ -98,10 +98,14 @@ class _DocumentCapturePageState extends State<DocumentCapturePage> {
       final result = await _scanService.scan(
         documentType: widget.documentType,
         imagePath: preview.originalPath,
-        ocrImagePath: preview.previewPath,
+        ocrImagePath: selection.ocrImagePath,
         enhancementWarning: preview.enhancementFailed ? preview.warning : null,
         countryCode: widget.countryCode,
         idCardSide: widget.idCardSide,
+      );
+
+      await _scanService.discardPreparedImages(
+        selection.allGeneratedPaths,
       );
 
       if (!mounted) return;
