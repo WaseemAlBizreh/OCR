@@ -50,41 +50,39 @@ class _DocumentScanHomePageState extends State<DocumentScanHomePage> {
             _captureHint,
             style: Theme.of(context).textTheme.bodyMedium,
           ),
-          if (_documentType != DocumentType.saudiId) ...[
-            const SizedBox(height: 24),
-            Text(
-              'Select country',
-              style: Theme.of(context).textTheme.titleMedium,
+          const SizedBox(height: 24),
+          Text(
+            'Select country',
+            style: Theme.of(context).textTheme.titleMedium,
+          ),
+          const SizedBox(height: 8),
+          DropdownButtonFormField<ArabicCountry>(
+            initialValue: _country,
+            decoration: const InputDecoration(
+              border: OutlineInputBorder(),
+              labelText: 'Country',
             ),
-            const SizedBox(height: 8),
-            DropdownButtonFormField<ArabicCountry>(
-              initialValue: _country,
-              decoration: const InputDecoration(
-                border: OutlineInputBorder(),
-                labelText: 'Country',
-              ),
-              items: ArabicCountry.values
-                  .map(
-                    (country) => DropdownMenuItem(
-                      value: country,
-                      child: Text(
-                        '${country.englishName} (${country.arabicName})',
-                      ),
+            items: ArabicCountry.values
+                .map(
+                  (country) => DropdownMenuItem(
+                    value: country,
+                    child: Text(
+                      '${country.englishName} (${country.arabicName})',
                     ),
-                  )
-                  .toList(),
-              onChanged: (value) {
-                if (value != null) {
-                  setState(() {
-                    _country = value;
-                    if (value != ArabicCountry.sudan) {
-                      _idCardSide = IdCardSide.front;
-                    }
-                  });
-                }
-              },
-            ),
-          ],
+                  ),
+                )
+                .toList(),
+            onChanged: (value) {
+              if (value != null) {
+                setState(() {
+                  _country = value;
+                  if (value != ArabicCountry.sudan) {
+                    _idCardSide = IdCardSide.front;
+                  }
+                });
+              }
+            },
+          ),
           if (_documentType == DocumentType.arabicId &&
               _country == ArabicCountry.sudan) ...[
             const SizedBox(height: 24),
@@ -114,9 +112,7 @@ class _DocumentScanHomePageState extends State<DocumentScanHomePage> {
               context.router.push(
                 DocumentCaptureRoute(
                   documentType: _documentType,
-                  countryCode: _documentType == DocumentType.saudiId
-                      ? null
-                      : _country.code,
+                  countryCode: _country.code,
                   idCardSide: _documentType == DocumentType.arabicId &&
                           _country == ArabicCountry.sudan
                       ? _idCardSide

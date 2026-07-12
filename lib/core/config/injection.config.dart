@@ -20,8 +20,6 @@ import '../../features/arabic_document_scan/data/generic_arabic_extractor.dart'
     as _i516;
 import '../../features/arabic_document_scan/data/passport_mrz_extractor.dart'
     as _i540;
-import '../../features/arabic_document_scan/data/saudi_id_extractor.dart'
-    as _i121;
 
 // initializes the registration of main-scope dependencies inside of GetIt
 _i174.GetIt $initGetIt(
@@ -31,7 +29,6 @@ _i174.GetIt $initGetIt(
 }) {
   final gh = _i526.GetItHelper(getIt, environment, environmentFilter);
   gh.lazySingleton<_i1054.ArabicOcrEngine>(() => _i1054.ArabicOcrEngine());
-  gh.lazySingleton<_i121.SaudiIdExtractor>(() => _i121.SaudiIdExtractor());
   gh.lazySingleton<_i516.GenericArabicExtractor>(
     () => _i516.GenericArabicExtractor(gh<_i1054.ArabicOcrEngine>()),
   );
@@ -40,10 +37,8 @@ _i174.GetIt $initGetIt(
   );
   gh.lazySingleton<_i942.DocumentScanService>(
     () => _i942.DocumentScanService(
-      gh<_i121.SaudiIdExtractor>(),
       gh<_i540.PassportMrzExtractor>(),
       gh<_i516.GenericArabicExtractor>(),
-      gh<_i1054.ArabicOcrEngine>(),
     ),
   );
   return getIt;

@@ -11,9 +11,6 @@ import 'package:mrz/features/arabic_document_scan/domain/document_scan_result.da
 /// Uses Tesseract (ara+eng) as the primary engine for Arabic script and ML Kit
 /// Latin as a supplement for English names, numbers, and MRZ-like text.
 ///
-/// Does NOT use [OcrService.recognizeTextEnhanced] from
-/// flutter_ocr_identity_extractor — that path crashes on the second scan
-/// because its singleton AI analyzer cannot be re-initialized after dispose.
 @lazySingleton
 class ArabicOcrEngine {
   TextRecognizer? _latinRecognizer;
