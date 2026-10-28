@@ -6,7 +6,7 @@ import 'package:mrz/core/config/injection.dart';
 import 'package:mrz/features/identity_scan/data/identity_scan_service.dart';
 import 'package:mrz/features/identity_scan/domain/document_kind.dart';
 import 'package:mrz/features/identity_scan/presentation/widgets/card_camera_page.dart';
-import 'package:mrz/features/mrz_scan/presentation/widgets/json_result_sheet.dart';
+import 'package:mrz/features/identity_scan/presentation/widgets/json_result_sheet.dart';
 import 'package:permission_handler/permission_handler.dart';
 
 /// Capture every page of the document, preview it,
@@ -25,17 +25,13 @@ class _IdentityFlowPageState extends State<IdentityFlowPage> {
   final Map<DocumentSide, String> _originals = {};
   String? _busyLabel;
   bool _permissionDenied = false;
+  bool _showTips = true;
+  bool _capturing = false;
 
   IdentityScanService get _service => locator<IdentityScanService>();
 
   bool get _complete =>
       widget.kind.sides.every((side) => _originals.containsKey(side));
-
-  @override
-  void initState() {
-    super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) => _captureMissing());
-  }
 
   @override
   void dispose() {
@@ -53,14 +49,16 @@ class _IdentityFlowPageState extends State<IdentityFlowPage> {
 
   /// Walks the sides in order (front, then back) until all are captured.
   Future<void> _captureMissing() async {
-    if (!await _ensureCamera()) return;
-    for (final side in widget.kind.sides) {
-      if (_originals.containsKey(side)) continue;
-      final captured = await _capture(side);
-      if (!captured) {
-        if (mounted && _originals.isEmpty) context.router.maybePop();
-        return;
+    if (_capturing) return; // a second tap must not open a second camera
+    _capturing = true;
+    try {
+      if (!await _ensureCamera()) return;
+      for (final side in widget.kind.sides) {
+        if (_originals.containsKey(side)) continue;
+        if (!await _capture(side)) return;
       }
+    } finally {
+      _capturing = false;
     }
   }
 
@@ -74,14 +72,27 @@ class _IdentityFlowPageState extends State<IdentityFlowPage> {
     if (path == null || !mounted) return false;
 
     final stale = _originals[side];
-    setState(() => _originals[side] = path);
+    final wasComplete = _complete;
+    setState(() {
+      _originals[side] = path;
+      // The last page is in: the tips have done their job, so fold them away
+      // and leave only the Photo tips button. A retake afterwards keeps
+      // whatever the user chose.
+      if (!wasComplete && _complete) _showTips = false;
+    });
     if (stale != null) await _service.discard([stale]);
     return true;
   }
 
   Future<void> _retake(DocumentSide side) async {
-    if (!await _ensureCamera()) return;
-    await _capture(side);
+    if (_capturing) return;
+    _capturing = true;
+    try {
+      if (!await _ensureCamera()) return;
+      await _capture(side);
+    } finally {
+      _capturing = false;
+    }
   }
 
   Future<void> _scan() async {
@@ -159,6 +170,26 @@ class _IdentityFlowPageState extends State<IdentityFlowPage> {
             ListView(
               padding: const EdgeInsets.fromLTRB(16, 16, 16, 120),
               children: [
+                if (_showTips || _originals.isEmpty)
+                  _InstructionCard(
+                    kind: widget.kind,
+                    // The notes stay until the first photo is taken, and the
+                    // card carries the button that starts capturing.
+                    onClose: _originals.isEmpty
+                        ? null
+                        : () => setState(() => _showTips = false),
+                    onStart: _originals.isEmpty && !busy ? _captureMissing : null,
+                  )
+                else
+                  Align(
+                    alignment: AlignmentDirectional.centerStart,
+                    child: FilledButton.tonalIcon(
+                      onPressed: () => setState(() => _showTips = true),
+                      icon: const Icon(Icons.lightbulb_outline),
+                      label: const Text('Photo tips'),
+                    ),
+                  ),
+                const SizedBox(height: 8),
                 for (final side in widget.kind.sides) ...[
                   _SideCard(
                     kind: widget.kind,
@@ -192,13 +223,172 @@ class _IdentityFlowPageState extends State<IdentityFlowPage> {
             ),
         ],
       ),
-      bottomNavigationBar: SafeArea(
-        minimum: const EdgeInsets.all(16),
-        child: FilledButton.icon(
-          onPressed: _complete && !busy ? _scan : null,
-          icon: const Icon(Icons.document_scanner_outlined),
-          label: const Text('Scan'),
+      // Before the first photo, the card above holds the start button.
+      bottomNavigationBar: _originals.isEmpty
+          ? null
+          : SafeArea(
+              minimum: const EdgeInsets.all(16),
+              child: FilledButton.icon(
+                onPressed: busy ? null : (_complete ? _scan : _captureMissing),
+                icon: Icon(
+                  _complete
+                      ? Icons.document_scanner_outlined
+                      : Icons.camera_alt_outlined,
+                ),
+                label: Text(_complete ? 'Scan' : 'Continue capturing'),
+              ),
+            ),
+    );
+  }
+}
+
+/// Tells the user how to take good photos and to retake a poor one: fields
+/// that cannot be read from a blurry or cut-off photo stay empty.
+class _InstructionCard extends StatelessWidget {
+  const _InstructionCard({required this.kind, this.onClose, this.onStart});
+
+  final DocumentKind kind;
+
+  /// Starts capturing; null once capturing has begun.
+  final VoidCallback? onStart;
+
+  /// Null while the card cannot be dismissed yet.
+  final VoidCallback? onClose;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colors = theme.colorScheme;
+    return Card(
+      color: colors.secondaryContainer,
+      margin: EdgeInsets.zero,
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(16, 8, 8, 16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(Icons.lightbulb_outline, color: colors.onSecondaryContainer),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    'Before you scan',
+                    style: theme.textTheme.titleMedium?.copyWith(
+                      color: colors.onSecondaryContainer,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ),
+                if (onClose != null)
+                  IconButton(
+                    tooltip: 'Hide tips',
+                    onPressed: onClose,
+                    icon: const Icon(Icons.close),
+                    color: colors.onSecondaryContainer,
+                  )
+                else
+                  const SizedBox(height: 48), // keeps the header height steady
+              ],
+            ),
+            _TipSection(title: 'Taking the photo', tips: kind.photoTips),
+            const SizedBox(height: 12),
+            _TipSection(title: 'Check each photo', tips: kind.checkTips),
+            const SizedBox(height: 14),
+            DecoratedBox(
+              decoration: BoxDecoration(
+                color: colors.surface.withValues(alpha: 0.6),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Padding(
+                padding: const EdgeInsets.all(12),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Icon(Icons.refresh, size: 20, color: colors.onSurface),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        'If a photo is blurry, cut off or has glare, tap Retake. '
+                        'A clear photo lets more data be read; anything that '
+                        'cannot be read stays empty.',
+                        style: theme.textTheme.bodyMedium?.copyWith(
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            if (onStart != null) ...[
+              const SizedBox(height: 16),
+              SizedBox(
+                width: double.infinity,
+                child: FilledButton.icon(
+                  onPressed: onStart,
+                  icon: const Icon(Icons.camera_alt_outlined),
+                  label: const Text('Start capturing'),
+                ),
+              ),
+              const SizedBox(height: 8),
+              Center(
+                child: Text(
+                  kind.captureOrder,
+                  textAlign: TextAlign.center,
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: colors.onSecondaryContainer,
+                  ),
+                ),
+              ),
+            ],
+          ],
         ),
+      ),
+    );
+  }
+}
+
+class _TipSection extends StatelessWidget {
+  const _TipSection({required this.title, required this.tips});
+
+  final String title;
+  final List<String> tips;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final color = theme.colorScheme.onSecondaryContainer;
+    return Padding(
+      padding: const EdgeInsets.only(right: 8),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            title,
+            style: theme.textTheme.titleSmall?.copyWith(
+              color: color,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+          const SizedBox(height: 4),
+          for (final tip in tips)
+            Padding(
+              padding: const EdgeInsets.only(top: 3),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text('•  ', style: theme.textTheme.bodyMedium?.copyWith(color: color)),
+                  Expanded(
+                    child: Text(
+                      tip,
+                      style: theme.textTheme.bodyMedium?.copyWith(color: color),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+        ],
       ),
     );
   }
@@ -240,7 +430,7 @@ class _SideCard extends StatelessWidget {
                 TextButton.icon(
                   onPressed: onCapture,
                   icon: const Icon(Icons.camera_alt_outlined, size: 18),
-                  label: Text(path == null ? 'Scan' : 'Retake'),
+                  label: Text(path == null ? 'Capture' : 'Retake'),
                 ),
               ],
             ),

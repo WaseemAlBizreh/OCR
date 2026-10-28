@@ -11,9 +11,6 @@ dependencies:
   flutter:
     sdk: flutter
 
-  mrz_scanner_plus:
-    git:
-      url: https://github.com/ahmedkubur/mrz-scanner.git
   auto_route: ^11.1.0
   get_it: ^8.2.0
   injectable: ^2.5.2
@@ -23,10 +20,6 @@ dependencies:
   google_mlkit_text_recognition: ^0.15.1
   opencv_dart: ^2.2.1+4
   path_provider: ^2.1.5
-
-dependency_overrides:
-  google_mlkit_text_recognition: ^0.15.1
-  google_mlkit_commons: ^0.11.0
 
 dev_dependencies:
   flutter_test:

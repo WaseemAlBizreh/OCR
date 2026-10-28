@@ -49,4 +49,30 @@ void main() {
       expect(expiry(text), '2027/05/16');
     });
   });
+
+  group('phone number', () {
+    String? phone(String text) => parser.parseFront(text).fields['phone'];
+
+    test('is not taken from the 11-digit national number', () {
+      expect(phone('الرقم الوطني: 11974221992\n11974221992'), isNull);
+      expect(phone('الرقم الوطني: 10912345678'), isNull);
+    });
+
+    test('is read from Arabic digits on the address row as Latin digits', () {
+      expect(phone('الرقم الوطني: 11974221992\nالعنوان: ت/٠٩٢٤٢٠١٣٧٤'), '0924201374');
+      expect(phone('العنوان: ت/۰۹۲۴۲۰۱۳۷۴'), '0924201374'); // Eastern Arabic digits
+    });
+
+    test('survives digits split by spaces or dots and a zero read as O', () {
+      expect(phone('العنوان: ت/ ٠٩٢٤ ٢٠١ ٣٧٤'), '0924201374');
+      expect(phone('ت/٠٩٢٤.٢٠١.٣٧٤'), '0924201374');
+      expect(phone('العنوان: ت/O924201374'), '0924201374');
+    });
+
+    test('only a real 10-digit mobile number is accepted', () {
+      expect(phone('ت/٠٩٢٤٢٠١٣٧'), isNull); // 9 digits
+      expect(phone('ت/٠٩٢٤٢٠١٣٧٤٥'), isNull); // 11 digits
+      expect(phone('ت/0124201374'), '0124201374');
+    });
+  });
 }

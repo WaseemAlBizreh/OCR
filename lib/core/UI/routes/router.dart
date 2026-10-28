@@ -15,7 +15,6 @@ class AppRouter extends RootStackRouter {
   @override
   List<AutoRoute> get routes => [
         AutoRoute(page: AppHomeRoute.page, initial: true),
-        AutoRoute(page: MrzScanRoute.page),
         AutoRoute(page: IdentityFlowRoute.page),
       ];
 }

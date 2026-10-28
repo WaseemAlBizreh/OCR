@@ -17,7 +17,7 @@ class AppHomePage extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             Text(
-              'Choose a scanning mode',
+              'Choose a document to scan',
               style: Theme.of(context).textTheme.headlineSmall,
             ),
             const SizedBox(height: 8),
@@ -27,12 +27,6 @@ class AppHomePage extends StatelessWidget {
             ),
             const SizedBox(height: 32),
             FilledButton.icon(
-              onPressed: () => context.router.push(const MrzScanRoute()),
-              icon: const Icon(Icons.camera_outlined),
-              label: const Text('MRZ Camera Scanner'),
-            ),
-            const SizedBox(height: 12),
-            OutlinedButton.icon(
               onPressed: () => context.router.push(
                 IdentityFlowRoute(kind: DocumentKind.sudanId),
               ),

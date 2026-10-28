@@ -15,7 +15,13 @@ class SudanCardParser {
 
   /// The national number printed on the card has 11 digits.
   static final _nationalNumber = RegExp(r'\b\d{11}\b');
-  static final _phone = RegExp(r'(?:ت\s*/\s*)?0?\d{9,10}');
+  /// Sudanese mobile numbers: 10 digits starting 09 or 01, and not part of a
+  /// longer number (the 11-digit national number contains 10-digit runs).
+  static final _phone = RegExp(r'(?<!\d)0[19]\d{8}(?!\d)');
+
+  /// The same number as OCR returns it from the address row, where it is
+  /// printed in Arabic-Indic digits: groups may be split by spaces or dots.
+  static final _spacedPhone = RegExp(r'(?<!\d)0[19](?:[\s.\-]?\d){8}(?!\d)');
   static final _bloodType = RegExp(r'\b[ABO][+-]\b', caseSensitive: false);
 
   CardFields parseFront(String ocrText) {
@@ -55,11 +61,7 @@ class SudanCardParser {
         labels: const ['العنوان'],
         arabicValue: true,
       ),
-      'phone': ParserUtils.extractLabeledValue(
-        ocrText,
-        labels: const ['ت /', 'ت/', 'هاتف', 'Tel'],
-        valuePattern: _phone,
-      ),
+      'phone': _phoneOf(ocrText),
     };
 
     return CardFields(
@@ -69,6 +71,27 @@ class SudanCardParser {
         const ['arabicName', 'nationalNumber', 'dateOfBirth'],
       ),
     );
+  }
+
+  /// The phone is printed in Arabic digits on the address row, after `ت/`.
+  /// It is read from the lines that carry that marker or the address label
+  /// (where OCR may also return `O` for a zero or split the digits with
+  /// spaces), and only a real mobile number is accepted. Anywhere else, only
+  /// an exact, unbroken number counts.
+  String? _phoneOf(String ocrText) {
+    final marker = RegExp(r'ت\s*/|هاتف|tel', caseSensitive: false);
+    final address = ParserUtils.normalizeForParsing('عنوان');
+
+    for (final line in ParserUtils.lines(ocrText)) {
+      if (!marker.hasMatch(line) &&
+          !ParserUtils.normalizeForParsing(line).contains(address)) {
+        continue;
+      }
+      final digits = ParserUtils.normalizeDigits(line).replaceAll(RegExp('[Oo]'), '0');
+      final match = _spacedPhone.firstMatch(digits);
+      if (match != null) return match[0]!.replaceAll(RegExp(r'\D'), '');
+    }
+    return _phone.firstMatch(ParserUtils.normalizeDigits(ocrText))?.group(0);
   }
 
   CardFields parseBack(String ocrText) {

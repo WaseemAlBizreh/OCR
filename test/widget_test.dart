@@ -7,12 +7,12 @@ void main() {
     await configureDependencies();
   });
 
-  testWidgets('shows home screen with both scanner options', (tester) async {
+  testWidgets('shows the home screen with both document options', (tester) async {
     await tester.pumpWidget(const MyApp());
     await tester.pumpAndSettle();
 
-    expect(find.text('Choose a scanning mode'), findsOneWidget);
-    expect(find.text('MRZ Camera Scanner'), findsOneWidget);
+    expect(find.text('Choose a document to scan'), findsOneWidget);
     expect(find.text('Sudan ID (front + back)'), findsOneWidget);
+    expect(find.text('Passport'), findsOneWidget);
   });
 }
