@@ -1,6 +1,7 @@
 import 'package:auto_route/auto_route.dart';
 import 'package:flutter/material.dart';
 import 'package:mrz/core/UI/routes/router.gr.dart';
+import 'package:mrz/features/identity_scan/domain/document_kind.dart';
 
 @RoutePage()
 class AppHomePage extends StatelessWidget {
@@ -21,7 +22,7 @@ class AppHomePage extends StatelessWidget {
             ),
             const SizedBox(height: 8),
             Text(
-              'MRZ camera flow for passports and ID backs, or Arabic document OCR for national IDs.',
+              'Scan the front and back of a Sudan ID, or a passport. The MRZ is validated and combined with the printed fields.',
               style: Theme.of(context).textTheme.bodyMedium,
             ),
             const SizedBox(height: 32),
@@ -32,10 +33,19 @@ class AppHomePage extends StatelessWidget {
             ),
             const SizedBox(height: 12),
             OutlinedButton.icon(
-              onPressed: () =>
-                  context.router.push(const DocumentScanHomeRoute()),
-              icon: const Icon(Icons.document_scanner_outlined),
-              label: const Text('Arabic Document Scanner'),
+              onPressed: () => context.router.push(
+                IdentityFlowRoute(kind: DocumentKind.sudanId),
+              ),
+              icon: const Icon(Icons.badge_outlined),
+              label: const Text('Sudan ID (front + back)'),
+            ),
+            const SizedBox(height: 12),
+            OutlinedButton.icon(
+              onPressed: () => context.router.push(
+                IdentityFlowRoute(kind: DocumentKind.passport),
+              ),
+              icon: const Icon(Icons.menu_book_outlined),
+              label: const Text('Passport'),
             ),
           ],
         ),

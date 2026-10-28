@@ -13,6 +13,6 @@ void main() {
 
     expect(find.text('Choose a scanning mode'), findsOneWidget);
     expect(find.text('MRZ Camera Scanner'), findsOneWidget);
-    expect(find.text('Arabic Document Scanner'), findsOneWidget);
+    expect(find.text('Sudan ID (front + back)'), findsOneWidget);
   });
 }

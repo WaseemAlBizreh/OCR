@@ -9,29 +9,24 @@
 // coverage:ignore-file
 
 // ignore_for_file: no_leading_underscores_for_library_prefixes
-import 'package:auto_route/auto_route.dart' as _i5;
-import 'package:flutter/material.dart' as _i6;
-import 'package:mrz/features/arabic_document_scan/domain/document_type.dart'
-    as _i7;
-import 'package:mrz/features/arabic_document_scan/domain/id_card_side.dart'
-    as _i8;
-import 'package:mrz/features/arabic_document_scan/presentation/pages/document_capture_page.dart'
-    as _i2;
-import 'package:mrz/features/arabic_document_scan/presentation/pages/document_scan_home_page.dart'
-    as _i3;
+import 'package:auto_route/auto_route.dart' as _i4;
+import 'package:flutter/material.dart' as _i5;
 import 'package:mrz/features/home/presentation/pages/app_home_page.dart' as _i1;
+import 'package:mrz/features/identity_scan/domain/document_kind.dart' as _i6;
+import 'package:mrz/features/identity_scan/presentation/pages/identity_flow_page.dart'
+    as _i2;
 import 'package:mrz/features/mrz_scan/presentation/pages/mrz_scan_page.dart'
-    as _i4;
+    as _i3;
 
 /// generated route for
 /// [_i1.AppHomePage]
-class AppHomeRoute extends _i5.PageRouteInfo<void> {
-  const AppHomeRoute({List<_i5.PageRouteInfo>? children})
+class AppHomeRoute extends _i4.PageRouteInfo<void> {
+  const AppHomeRoute({List<_i4.PageRouteInfo>? children})
     : super(AppHomeRoute.name, initialChildren: children);
 
   static const String name = 'AppHomeRoute';
 
-  static _i5.PageInfo page = _i5.PageInfo(
+  static _i4.PageInfo page = _i4.PageInfo(
     name,
     builder: (data) {
       return const _i1.AppHomePage();
@@ -40,108 +35,64 @@ class AppHomeRoute extends _i5.PageRouteInfo<void> {
 }
 
 /// generated route for
-/// [_i2.DocumentCapturePage]
-class DocumentCaptureRoute extends _i5.PageRouteInfo<DocumentCaptureRouteArgs> {
-  DocumentCaptureRoute({
-    _i6.Key? key,
-    required _i7.DocumentType documentType,
-    String? countryCode,
-    _i8.IdCardSide idCardSide = _i8.IdCardSide.front,
-    List<_i5.PageRouteInfo>? children,
+/// [_i2.IdentityFlowPage]
+class IdentityFlowRoute extends _i4.PageRouteInfo<IdentityFlowRouteArgs> {
+  IdentityFlowRoute({
+    _i5.Key? key,
+    required _i6.DocumentKind kind,
+    List<_i4.PageRouteInfo>? children,
   }) : super(
-         DocumentCaptureRoute.name,
-         args: DocumentCaptureRouteArgs(
-           key: key,
-           documentType: documentType,
-           countryCode: countryCode,
-           idCardSide: idCardSide,
-         ),
+         IdentityFlowRoute.name,
+         args: IdentityFlowRouteArgs(key: key, kind: kind),
          initialChildren: children,
        );
 
-  static const String name = 'DocumentCaptureRoute';
+  static const String name = 'IdentityFlowRoute';
 
-  static _i5.PageInfo page = _i5.PageInfo(
+  static _i4.PageInfo page = _i4.PageInfo(
     name,
     builder: (data) {
-      final args = data.argsAs<DocumentCaptureRouteArgs>();
-      return _i2.DocumentCapturePage(
-        key: args.key,
-        documentType: args.documentType,
-        countryCode: args.countryCode,
-        idCardSide: args.idCardSide,
-      );
+      final args = data.argsAs<IdentityFlowRouteArgs>();
+      return _i2.IdentityFlowPage(key: args.key, kind: args.kind);
     },
   );
 }
 
-class DocumentCaptureRouteArgs {
-  const DocumentCaptureRouteArgs({
-    this.key,
-    required this.documentType,
-    this.countryCode,
-    this.idCardSide = _i8.IdCardSide.front,
-  });
+class IdentityFlowRouteArgs {
+  const IdentityFlowRouteArgs({this.key, required this.kind});
 
-  final _i6.Key? key;
+  final _i5.Key? key;
 
-  final _i7.DocumentType documentType;
-
-  final String? countryCode;
-
-  final _i8.IdCardSide idCardSide;
+  final _i6.DocumentKind kind;
 
   @override
   String toString() {
-    return 'DocumentCaptureRouteArgs{key: $key, documentType: $documentType, countryCode: $countryCode, idCardSide: $idCardSide}';
+    return 'IdentityFlowRouteArgs{key: $key, kind: $kind}';
   }
 
   @override
   bool operator ==(Object other) {
     if (identical(this, other)) return true;
-    if (other is! DocumentCaptureRouteArgs) return false;
-    return key == other.key &&
-        documentType == other.documentType &&
-        countryCode == other.countryCode &&
-        idCardSide == other.idCardSide;
+    if (other is! IdentityFlowRouteArgs) return false;
+    return key == other.key && kind == other.kind;
   }
 
   @override
-  int get hashCode =>
-      key.hashCode ^
-      documentType.hashCode ^
-      countryCode.hashCode ^
-      idCardSide.hashCode;
+  int get hashCode => key.hashCode ^ kind.hashCode;
 }
 
 /// generated route for
-/// [_i3.DocumentScanHomePage]
-class DocumentScanHomeRoute extends _i5.PageRouteInfo<void> {
-  const DocumentScanHomeRoute({List<_i5.PageRouteInfo>? children})
-    : super(DocumentScanHomeRoute.name, initialChildren: children);
-
-  static const String name = 'DocumentScanHomeRoute';
-
-  static _i5.PageInfo page = _i5.PageInfo(
-    name,
-    builder: (data) {
-      return const _i3.DocumentScanHomePage();
-    },
-  );
-}
-
-/// generated route for
-/// [_i4.MrzScanPage]
-class MrzScanRoute extends _i5.PageRouteInfo<void> {
-  const MrzScanRoute({List<_i5.PageRouteInfo>? children})
+/// [_i3.MrzScanPage]
+class MrzScanRoute extends _i4.PageRouteInfo<void> {
+  const MrzScanRoute({List<_i4.PageRouteInfo>? children})
     : super(MrzScanRoute.name, initialChildren: children);
 
   static const String name = 'MrzScanRoute';
 
-  static _i5.PageInfo page = _i5.PageInfo(
+  static _i4.PageInfo page = _i4.PageInfo(
     name,
     builder: (data) {
-      return const _i4.MrzScanPage();
+      return const _i3.MrzScanPage();
     },
   );
 }
