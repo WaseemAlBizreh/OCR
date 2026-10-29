@@ -4,6 +4,7 @@ import 'package:flutter_tesseract_ocr/flutter_tesseract_ocr.dart';
 import 'package:google_mlkit_text_recognition/google_mlkit_text_recognition.dart';
 import 'package:injectable/injectable.dart';
 import 'package:mrz/features/identity_scan/data/front/parser_utils.dart';
+import 'package:mrz/features/identity_scan/data/ocr/card_text_recognizer.dart';
 
 /// On-device OCR.
 ///
@@ -11,7 +12,7 @@ import 'package:mrz/features/identity_scan/data/front/parser_utils.dart';
 /// * Tesseract `ara+eng` reads the Arabic fields on the card.
 /// * Tesseract `eng` with an MRZ character whitelist is the MRZ fallback.
 @lazySingleton
-class OcrEngine {
+class OcrEngine implements CardTextRecognizer {
   static const _mrzWhitelist = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789<';
 
   TextRecognizer? _latin;
@@ -39,6 +40,7 @@ class OcrEngine {
 
   /// Arabic + Latin text for the card fields: Tesseract (three page
   /// segmentation modes, merged) supplemented with ML Kit lines.
+  @override
   Future<String> recognizeCardText(String imagePath) async {
     final tesseractParts = <String>[];
     for (final psm in const ['6', '11', '3']) {

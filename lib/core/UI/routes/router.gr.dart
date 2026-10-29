@@ -13,6 +13,7 @@ import 'package:auto_route/auto_route.dart' as _i3;
 import 'package:flutter/material.dart' as _i4;
 import 'package:mrz/features/home/presentation/pages/app_home_page.dart' as _i1;
 import 'package:mrz/features/identity_scan/domain/document_kind.dart' as _i5;
+import 'package:mrz/features/identity_scan/domain/scan_engine.dart' as _i6;
 import 'package:mrz/features/identity_scan/presentation/pages/identity_flow_page.dart'
     as _i2;
 
@@ -38,10 +39,11 @@ class IdentityFlowRoute extends _i3.PageRouteInfo<IdentityFlowRouteArgs> {
   IdentityFlowRoute({
     _i4.Key? key,
     required _i5.DocumentKind kind,
+    _i6.ScanEngine engine = _i6.ScanEngine.classic,
     List<_i3.PageRouteInfo>? children,
   }) : super(
          IdentityFlowRoute.name,
-         args: IdentityFlowRouteArgs(key: key, kind: kind),
+         args: IdentityFlowRouteArgs(key: key, kind: kind, engine: engine),
          initialChildren: children,
        );
 
@@ -51,30 +53,40 @@ class IdentityFlowRoute extends _i3.PageRouteInfo<IdentityFlowRouteArgs> {
     name,
     builder: (data) {
       final args = data.argsAs<IdentityFlowRouteArgs>();
-      return _i2.IdentityFlowPage(key: args.key, kind: args.kind);
+      return _i2.IdentityFlowPage(
+        key: args.key,
+        kind: args.kind,
+        engine: args.engine,
+      );
     },
   );
 }
 
 class IdentityFlowRouteArgs {
-  const IdentityFlowRouteArgs({this.key, required this.kind});
+  const IdentityFlowRouteArgs({
+    this.key,
+    required this.kind,
+    this.engine = _i6.ScanEngine.classic,
+  });
 
   final _i4.Key? key;
 
   final _i5.DocumentKind kind;
 
+  final _i6.ScanEngine engine;
+
   @override
   String toString() {
-    return 'IdentityFlowRouteArgs{key: $key, kind: $kind}';
+    return 'IdentityFlowRouteArgs{key: $key, kind: $kind, engine: $engine}';
   }
 
   @override
   bool operator ==(Object other) {
     if (identical(this, other)) return true;
     if (other is! IdentityFlowRouteArgs) return false;
-    return key == other.key && kind == other.kind;
+    return key == other.key && kind == other.kind && engine == other.engine;
   }
 
   @override
-  int get hashCode => key.hashCode ^ kind.hashCode;
+  int get hashCode => key.hashCode ^ kind.hashCode ^ engine.hashCode;
 }

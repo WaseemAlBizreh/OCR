@@ -4,6 +4,7 @@ import 'package:mrz/features/identity_scan/data/front/passport_viz_parser.dart';
 import 'package:mrz/features/identity_scan/data/front/sudan_card_parser.dart';
 import 'package:mrz/features/identity_scan/data/image/image_ops.dart';
 import 'package:mrz/features/identity_scan/data/mrz/mrz_reader.dart';
+import 'package:mrz/features/identity_scan/data/ocr/card_text_recognizer.dart';
 import 'package:mrz/features/identity_scan/data/ocr/ocr_engine.dart';
 import 'package:mrz/features/identity_scan/domain/document_kind.dart';
 import 'package:mrz/features/identity_scan/domain/identity_scan_result.dart';
@@ -35,11 +36,21 @@ class IdentityScanService {
     }
   }
 
+  /// [cardText] reads the printed Arabic/Latin fields; it defaults to the
+  /// classic Tesseract engine. The MRZ is always read by [MrzReader].
   Future<IdentityScanResult> scan({
     required DocumentKind kind,
     required Map<DocumentSide, String> imagePaths,
+    CardTextRecognizer? cardText,
+    CardFields Function(String text)? parseFront,
+    CardFields Function(String text)? parseBack,
+    bool includeRawText = false,
   }) async {
+    final recognizer = cardText ?? _ocr;
+    final frontParser = parseFront ?? _cardParser.parseFront;
+    final backParser = parseBack ?? _cardParser.parseBack;
     final warnings = <String>[];
+    final rawText = <DocumentSide, String>{};
 
     final mrzSide =
         kind == DocumentKind.passport ? DocumentSide.dataPage : DocumentSide.back;
@@ -59,19 +70,23 @@ class IdentityScanService {
     CardFields? front;
     CardFields? back;
     if (kind == DocumentKind.sudanId) {
-      front = _cardParser.parseFront(
-        await _ocr.recognizeCardText(imagePaths[DocumentSide.front]!),
-      );
-      back = _cardParser.parseBack(
-        await _ocr.recognizeCardText(imagePaths[DocumentSide.back]!),
-      );
+      final frontText =
+          await recognizer.recognizeCardText(imagePaths[DocumentSide.front]!);
+      final backText =
+          await recognizer.recognizeCardText(imagePaths[DocumentSide.back]!);
+      if (includeRawText) {
+        rawText[DocumentSide.front] = frontText;
+        rawText[DocumentSide.back] = backText;
+      }
+      front = frontParser(frontText);
+      back = backParser(backText);
       warnings.addAll(front.warnings);
     }
 
     CardFields? dataPage;
-    final rawText = <DocumentSide, String>{};
     if (kind == DocumentKind.passport) {
-      final text = await _ocr.recognizeCardText(imagePaths[DocumentSide.dataPage]!);
+      final text =
+          await recognizer.recognizeCardText(imagePaths[DocumentSide.dataPage]!);
       rawText[DocumentSide.dataPage] = text;
       dataPage = _passportParser.parse(text, mrz: mrz);
       warnings.addAll(dataPage.warnings);
