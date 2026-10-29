@@ -63,21 +63,13 @@ class MrzReader {
       label: 'mrz_band',
     );
     try {
-      if (consider('mlkit/band', await _ocr.recognizeLatin(bandPath)) ||
-          consider(
-            'tesseract/band',
-            await _ocr.recognizeMrzWithTesseract(bandPath),
-          )) {
+      if (consider('mlkit/band', await _ocr.recognizeLatin(bandPath))) {
         return MrzReadResult(data: best, attempts: attempts);
       }
     } finally {
       await _imageOps.deleteTemp(bandPath);
     }
 
-    consider(
-      'tesseract/full',
-      await _ocr.recognizeMrzWithTesseract(imagePath),
-    );
     return MrzReadResult(data: best, attempts: attempts);
   }
 }

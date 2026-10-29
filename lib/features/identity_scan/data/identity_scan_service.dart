@@ -5,7 +5,6 @@ import 'package:mrz/features/identity_scan/data/front/sudan_card_parser.dart';
 import 'package:mrz/features/identity_scan/data/image/image_ops.dart';
 import 'package:mrz/features/identity_scan/data/mrz/mrz_reader.dart';
 import 'package:mrz/features/identity_scan/data/ocr/card_text_recognizer.dart';
-import 'package:mrz/features/identity_scan/data/ocr/ocr_engine.dart';
 import 'package:mrz/features/identity_scan/domain/document_kind.dart';
 import 'package:mrz/features/identity_scan/domain/identity_scan_result.dart';
 import 'package:mrz/features/identity_scan/domain/mrz_data.dart';
@@ -19,7 +18,6 @@ import 'package:mrz/features/identity_scan/domain/mrz_data.dart';
 class IdentityScanService {
   IdentityScanService(
     this._imageOps,
-    this._ocr,
     this._mrzReader,
   );
 
@@ -27,7 +25,6 @@ class IdentityScanService {
   static const _passportParser = PassportVizParser();
 
   final ImageOps _imageOps;
-  final OcrEngine _ocr;
   final MrzReader _mrzReader;
 
   Future<void> discard(Iterable<String> paths) async {
@@ -36,17 +33,17 @@ class IdentityScanService {
     }
   }
 
-  /// [cardText] reads the printed Arabic/Latin fields; it defaults to the
-  /// classic Tesseract engine. The MRZ is always read by [MrzReader].
+  /// [cardText] reads the printed Arabic/Latin fields. The MRZ is always read
+  /// by [MrzReader].
   Future<IdentityScanResult> scan({
     required DocumentKind kind,
     required Map<DocumentSide, String> imagePaths,
-    CardTextRecognizer? cardText,
+    required CardTextRecognizer cardText,
     CardFields Function(String text)? parseFront,
     CardFields Function(String text)? parseBack,
     bool includeRawText = false,
   }) async {
-    final recognizer = cardText ?? _ocr;
+    final recognizer = cardText;
     final frontParser = parseFront ?? _cardParser.parseFront;
     final backParser = parseBack ?? _cardParser.parseBack;
     final warnings = <String>[];

@@ -54,19 +54,16 @@ _i174.GetIt $initGetIt(
   gh.lazySingleton<_i537.MrzReader>(
     () => _i537.MrzReader(gh<_i77.OcrEngine>(), gh<_i507.ImageOps>()),
   );
-  gh.lazySingleton<_i201.IdentityScanService>(
-    () => _i201.IdentityScanService(
-      gh<_i507.ImageOps>(),
-      gh<_i77.OcrEngine>(),
-      gh<_i537.MrzReader>(),
-    ),
-  );
   gh.lazySingleton<_i1039.PaddlePassportScanService>(
     () => _i1039.PaddlePassportScanService(
       gh<_i487.MlKitLatinReader>(),
       gh<_i235.PaddlePassportMrzReader>(),
       gh<_i453.PaddlePassportTextReader>(),
     ),
+  );
+  gh.lazySingleton<_i201.IdentityScanService>(
+    () =>
+        _i201.IdentityScanService(gh<_i507.ImageOps>(), gh<_i537.MrzReader>()),
   );
   return getIt;
 }
