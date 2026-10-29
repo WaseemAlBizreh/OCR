@@ -143,6 +143,7 @@ void main() {
     test('الجنسذكر (label glued to value) gives gender M', () {
       expect(parser.parse([at('الجنسذكر', 300, 100, 260)]).fields['gender'], 'M');
       expect(parser.parse([at('الجنسأنثى', 300, 100, 260)]).fields['gender'], 'F');
+      expect(parser.parse([at('الجنسنذكر', 300, 100, 260)]).fields['gender'], 'M');
     });
 
     test('نكر is read as ذكر', () {

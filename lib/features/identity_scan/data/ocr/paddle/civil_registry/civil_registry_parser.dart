@@ -271,6 +271,9 @@ class CivilRegistryParser {
     final words = _arabicWord.allMatches(ParserUtils.normalizeArabic(text)).map((m) => m.group(0)!);
     for (final word in words) {
       if (word == 'ذكر') return 'M';
+      // A stray letter glued to the word (`نذكر`).
+      if (tolerant && word.contains('ذكر')) return 'M';
+      if (tolerant && RegExp('[اأإ]نثى').hasMatch(word)) return 'F';
       // OCR often turns the dotted ذ into ن (`نكر`): one wrong letter.
       if (tolerant && word.length == 3 && _distance(_shape(word), _shape('ذكر')) <= 1) return 'M';
       if (word.length >= 4 && _distance(_shape(word), _shape('انثى')) <= 1) return 'F';

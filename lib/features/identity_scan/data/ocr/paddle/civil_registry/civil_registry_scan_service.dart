@@ -1,4 +1,5 @@
 import 'package:injectable/injectable.dart';
+import 'package:mrz/features/identity_scan/data/front/card_dates.dart';
 import 'package:mrz/features/identity_scan/data/image/image_ops.dart';
 import 'package:mrz/features/identity_scan/data/ocr/paddle/civil_registry/certificate_labels.dart';
 import 'package:mrz/features/identity_scan/data/ocr/paddle/civil_registry/civil_registry_parser.dart';
@@ -49,18 +50,20 @@ class CivilRegistryScanService {
       }
     }
 
-    // The number is printed small or on a textured background; neither engine
-    // reads it from the full page, so its row is cropped and read on its own.
+    // Digits are sometimes printed small or on a textured background, and
+    // neither engine reads them from the full page. Such a row is cropped and
+    // read on its own.
     var fields = page.fields;
     var warnings = page.warnings;
-    if (fields[_numberKey] == null) {
-      final reread = await _rereadNumber(pagePath, chosen);
-      rawMlKit = '$rawMlKit\n--- national number row ---\n${reread.text}';
-      if (reread.number != null) {
-        fields = {...fields, _numberKey: reread.number};
+    for (final reread in _rereads) {
+      if (fields[reread.key] != null) continue;
+      final result = await _rereadRow(pagePath, chosen, reread, fields);
+      rawMlKit = '$rawMlKit\n--- ${reread.key} row ---\n${result.text}';
+      if (result.value != null) {
+        fields = {...fields, reread.key: result.value};
         warnings = [
           for (final w in warnings)
-            if (w != 'Missing field: $_numberKey') w,
+            if (w != 'Missing field: ${reread.key}') w,
         ];
       }
     }
@@ -75,17 +78,35 @@ class CivilRegistryScanService {
     );
   }
 
-  static final _numberKey = CertificateField.nationalNumber.name;
+  /// Fields whose row is read again when the full-page pass found no value.
+  static final _rereads = [
+    _Reread(CertificateField.nationalNumber, CivilRegistryParser.nationalNumber),
+    _Reread(CertificateField.issueDate, _dateOf, accept: _afterBirth),
+  ];
 
-  /// Reads the national-number row again from crops of the photo: the whole
-  /// row and the value half of the label's box, each as is and contrast-
-  /// boosted, upscaled so the digits are tall enough for ML Kit.
-  Future<({String? number, String text})> _rereadNumber(
+  static String? _dateOf(String line) {
+    final dates = CardDates.datesIn(line);
+    return dates.isEmpty ? null : CardDates.iso(dates.first);
+  }
+
+  /// An issue date cannot be on or before the birth date; this also rejects
+  /// the birth date itself when a crop reaches into the next row.
+  static bool _afterBirth(String value, Map<String, String?> fields) {
+    final birth = fields[CertificateField.dateOfBirth.name];
+    return birth == null || value.compareTo(birth) > 0;
+  }
+
+  /// Reads [reread]'s row again from crops of the photo: the whole row and the
+  /// value half of the label's box, each as is and contrast-boosted, upscaled
+  /// so the digits are tall enough for ML Kit.
+  Future<({String? value, String text})> _rereadRow(
     String pagePath,
     CertificateText text,
+    _Reread reread,
+    Map<String, String?> fields,
   ) async {
-    final label = _parser.labelLine(CertificateField.nationalNumber, text.lines);
-    if (label == null) return (number: null, text: 'label not found');
+    final label = _parser.labelLine(reread.field, text.lines);
+    if (label == null) return (value: null, text: 'label not found');
 
     final pad = label.height * 0.4;
     final top = label.top - pad;
@@ -108,20 +129,22 @@ class CivilRegistryScanService {
             bottom: bottom,
             minWidth: 1400,
             enhance: enhance,
-            label: 'certificate_number',
+            label: 'certificate_row',
           );
           final read = await _reader.readMlKitText(crop);
           seen.writeln(read.replaceAll('\n', ' | '));
           for (final line in read.split('\n')) {
-            final number = CivilRegistryParser.nationalNumber(line);
-            if (number != null) return (number: number, text: seen.toString());
+            final value = reread.extract(line);
+            if (value != null && (reread.accept?.call(value, fields) ?? true)) {
+              return (value: value, text: seen.toString());
+            }
           }
         } finally {
           if (crop != null) await _imageOps.deleteTemp(crop);
         }
       }
     }
-    return (number: null, text: seen.toString());
+    return (value: null, text: seen.toString());
   }
 
   static bool _missingKey(CertificatePage page) =>
@@ -129,4 +152,16 @@ class CivilRegistryScanService {
 
   static int _found(CertificatePage page) =>
       page.fields.values.where((v) => v != null).length;
+}
+
+class _Reread {
+  const _Reread(this.field, this.extract, {this.accept});
+
+  final CertificateField field;
+  final String? Function(String line) extract;
+
+  /// Extra check on a found value, given the fields read so far.
+  final bool Function(String value, Map<String, String?> fields)? accept;
+
+  String get key => field.name;
 }

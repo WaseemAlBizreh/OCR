@@ -104,7 +104,7 @@ class PaddlePassportScanService {
       'nationalNumber': mrzNational ?? printedNational,
       'personalNumber': personalNumber,
       'arabicName': page['arabicName'],
-      'englishName': mrz?.fullName,
+      'englishName': mrz?.fullName ?? page['englishName'],
       'surname': mrz?.surname,
       'givenNames': mrz?.givenNames,
       'dateOfBirth': _crossChecked(

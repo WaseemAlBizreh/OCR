@@ -16,7 +16,8 @@ class PaddleSudanCardParser {
 
   static final _label = {
     'name': RegExp(
-      r'(?<![\u0600-\u06FF])[اإأآ]{1,2}\u0640*ل?[اإأآ]?\u0640*سم(?![\u0600-\u06FF])',
+      // The leading alef is sometimes lost (لاسم for الاسم).
+      r'(?<![\u0600-\u06FF])(?:[اإأآ]{1,2}\u0640*ل?|ل)[اإأآ]?\u0640*سم(?![\u0600-\u06FF])',
     ),
     'dob': _labelRegex('تاريخ الميلاد'),
     'birthPlace': _labelRegex('مكان الميلاد'),

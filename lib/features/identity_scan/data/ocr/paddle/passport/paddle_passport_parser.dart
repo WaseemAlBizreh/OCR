@@ -105,8 +105,15 @@ class PaddlePassportParser {
     final issuePlace = placeOf(PassportField.issuePlace);
 
     String? arabicName;
-    for (final text in texts(PassportField.arabicName)) {
-      arabicName ??= _arabicValue(text, minWords: 2);
+    String? englishName;
+    for (final source in sources(PassportField.arabicName)) {
+      arabicName ??= _arabicValue(source.text, minWords: 2);
+      // The name label is bilingual, so the Latin name sits beside the Arabic
+      // one. A single word is a country code (`SDN`), not a name.
+      final latin = _latinValue(source.text);
+      if (englishName == null && latin != null && latin.contains(' ')) {
+        englishName = _repairLatin(latin, source.alts);
+      }
     }
 
     String? nationalNumber;
@@ -133,6 +140,7 @@ class PaddlePassportParser {
     final fields = <String, String?>{
       'passportNumber': passportNumber,
       'arabicName': arabicName,
+      'englishName': englishName,
       'nationalNumber': nationalNumber,
       'nationalityText': nationality,
       'nationalityTextArabic': nationalityArabic,

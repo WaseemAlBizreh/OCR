@@ -41,6 +41,7 @@ void main() {
     test('a label glued to its value is still a label: الجنسذكر', () {
       expect(exact('الجنسذكر'), CertificateField.gender);
       expect(exact('الجنسنكر'), CertificateField.gender);
+      expect(exact('الجنسنذكر'), CertificateField.gender);
       expect(exact('الحالة الاجتماعيةغير متزوج'), CertificateField.maritalStatus);
       expect(exact('الجنسية'), isNot(CertificateField.gender));
     });

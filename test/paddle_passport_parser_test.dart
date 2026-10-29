@@ -169,6 +169,7 @@ void main() {
     test('reads every printed field the page carries', () {
       final fields = parser.parse(page(), mrz: sdn.mrz).fields;
       expect(fields['arabicName'], 'ايمن احمد عباس ابراهيم');
+      expect(fields['englishName'], 'AYMAN AHMED ABBAS IBRAHIM');
       expect(fields['nationalNumber'], '24176449282');
       expect(fields['nationalityText'], 'Sudan'); // the page prints the code SDN
       expect(fields['nationalityTextArabic'], 'السودان');
@@ -220,6 +221,7 @@ void main() {
     test('reads every printed field the page carries', () {
       final fields = parser.parse(page(), mrz: holder.mrz).fields;
       expect(fields['arabicName'], 'ميرغنى مكى ميرغنى عثمان');
+      expect(fields['englishName'], 'MERGHANI MEKKI MERGHANI OSMAN');
       expect(fields['nationalNumber'], '11974221992');
       expect(fields['nationalityText'], 'Sudan');
       expect(fields['nationalityTextArabic'], 'السودان');

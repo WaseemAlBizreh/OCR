@@ -91,7 +91,8 @@ class CertificateLabels {
         _ => '$cـ*',
       });
     }
-    final end = glued ? '(?=$_valueStart)' : '(?![؀-ۿ])';
+    // One stray letter may sit between them (`الجنسنذكر`).
+    final end = glued ? '(?=[ء-ي]?$_valueStart)' : '(?![؀-ۿ])';
     return RegExp('(?<![؀-ۿ])$buffer$end');
   }
 
