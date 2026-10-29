@@ -4,13 +4,7 @@ import 'package:auto_route/auto_route.dart';
 import 'package:flutter/material.dart';
 import 'package:mrz/core/config/injection.dart';
 import 'package:mrz/features/identity_scan/data/identity_scan_service.dart';
-import 'package:mrz/features/identity_scan/data/ocr/ocr_engine.dart';
-import 'package:mrz/features/identity_scan/data/ocr/paddle/paddle_latin_hybrid_recognizer.dart';
-import 'package:mrz/features/identity_scan/data/ocr/paddle/paddle_ocr_engine.dart';
-import 'package:mrz/features/identity_scan/data/ocr/paddle/passport/paddle_passport_scan_service.dart';
-import 'package:mrz/features/identity_scan/data/ocr/paddle/paddle_sudan_card_parser.dart';
 import 'package:mrz/features/identity_scan/domain/document_kind.dart';
-import 'package:mrz/features/identity_scan/domain/scan_engine.dart';
 import 'package:mrz/features/identity_scan/presentation/widgets/card_camera_page.dart';
 import 'package:mrz/features/identity_scan/presentation/widgets/json_result_sheet.dart';
 import 'package:permission_handler/permission_handler.dart';
@@ -19,14 +13,9 @@ import 'package:permission_handler/permission_handler.dart';
 /// then scan and show the payload.
 @RoutePage()
 class IdentityFlowPage extends StatefulWidget {
-  const IdentityFlowPage({
-    super.key,
-    required this.kind,
-    this.engine = ScanEngine.classic,
-  });
+  const IdentityFlowPage({super.key, required this.kind});
 
   final DocumentKind kind;
-  final ScanEngine engine;
 
   @override
   State<IdentityFlowPage> createState() => _IdentityFlowPageState();
@@ -38,8 +27,6 @@ class _IdentityFlowPageState extends State<IdentityFlowPage> {
   bool _permissionDenied = false;
   bool _showTips = true;
   bool _capturing = false;
-
-  static const _paddleParser = PaddleSudanCardParser();
 
   IdentityScanService get _service => locator<IdentityScanService>();
 
@@ -112,28 +99,13 @@ class _IdentityFlowPageState extends State<IdentityFlowPage> {
     if (!_complete || _busyLabel != null) return;
     setState(() => _busyLabel = 'Scanning document...');
     try {
-      final paddle = widget.engine == ScanEngine.paddle;
       final stopwatch = Stopwatch()..start();
-      // Passports on the Paddle engine use their own pipeline (ML Kit +
-      // Paddle, no Tesseract); everything else goes through the shared service.
-      final result = paddle && widget.kind == DocumentKind.passport
-          ? await locator<PaddlePassportScanService>()
-              .scan(_originals[DocumentSide.dataPage]!)
-          : await _service.scan(
-              kind: widget.kind,
-              imagePaths: {
-                for (final side in widget.kind.sides) side: _originals[side]!,
-              },
-              cardText: paddle
-                  ? PaddleLatinHybridRecognizer(
-                      locator<PaddleOcrEngine>(),
-                      locator<OcrEngine>(),
-                    )
-                  : null,
-              parseFront: paddle ? _paddleParser.parseFront : null,
-              parseBack: paddle ? _paddleParser.parseBack : null,
-              includeRawText: paddle,
-            );
+      final result = await _service.scan(
+        kind: widget.kind,
+        imagePaths: {
+          for (final side in widget.kind.sides) side: _originals[side]!,
+        },
+      );
       stopwatch.stop();
       if (!mounted) return;
       setState(() => _busyLabel = null);
@@ -147,7 +119,7 @@ class _IdentityFlowPageState extends State<IdentityFlowPage> {
         builder: (_) => JsonResultSheet(
           resultJson: {
             ...result.toJson(),
-            'engine': widget.engine.label,
+            'engine': 'classic',
             'scanMs': stopwatch.elapsedMilliseconds,
           },
         ),
@@ -198,11 +170,7 @@ class _IdentityFlowPageState extends State<IdentityFlowPage> {
     final busy = _busyLabel != null;
     return Scaffold(
       appBar: AppBar(
-        title: Text(
-          widget.engine == ScanEngine.paddle
-              ? '${widget.kind.label} (Paddle)'
-              : widget.kind.label,
-        ),
+        title: Text(widget.kind.label),
       ),
       body: Stack(
         children: [

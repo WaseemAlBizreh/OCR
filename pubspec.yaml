@@ -16,7 +16,6 @@ dependencies:
   injectable: ^2.5.2
   permission_handler: ^12.0.1
   camera: ^0.11.2
-  flutter_onnxruntime: ^1.9.0
   flutter_tesseract_ocr: ^0.4.31
   google_mlkit_text_recognition: ^0.15.1
   opencv_dart: ^2.2.1+4
@@ -43,7 +42,6 @@ flutter:
   assets:
     - assets/icon/
     - assets/tessdata/
-    - assets/models/paddle/
     - assets/tessdata_config.json
 
 hooks:
