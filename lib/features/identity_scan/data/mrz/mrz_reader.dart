@@ -32,6 +32,7 @@ class MrzReader {
     final formats = switch (kind) {
       DocumentKind.sudanId => [MrzFormat.td1],
       DocumentKind.passport => [MrzFormat.td3],
+      DocumentKind.civilRegistryCertificate => <MrzFormat>[], // has no MRZ
     };
     final attempts = <Map<String, dynamic>>[];
     MrzData? best;

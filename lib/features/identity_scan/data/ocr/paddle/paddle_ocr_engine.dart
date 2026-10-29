@@ -50,7 +50,10 @@ class PaddleOcrEngine implements CardTextRecognizer {
       (await recognize(imagePath)).text;
 
   /// Full result with per-line boxes and confidences, for the debug screen.
-  Future<PaddleResult> recognize(String imagePath) async {
+  ///
+  /// [detMaxSide] is the longest side the detector sees; a full A4 page needs
+  /// more than a card to keep small print readable.
+  Future<PaddleResult> recognize(String imagePath, {int detMaxSide = _detMaxSide}) async {
     await _ensureLoaded();
 
     final image = cv.imread(imagePath);
@@ -60,7 +63,7 @@ class PaddleOcrEngine implements CardTextRecognizer {
     }
 
     try {
-      final boxes = await _detect(image);
+      final boxes = await _detect(image, detMaxSide);
       final lines = <PaddleLine>[];
       for (final box in boxes) {
         final line = await _recognize(image, box);
@@ -74,8 +77,8 @@ class PaddleOcrEngine implements CardTextRecognizer {
 
   // ---- detection ----------------------------------------------------------
 
-  Future<List<TextBox>> _detect(cv.Mat image) async {
-    final scale = math.min(1.0, _detMaxSide / math.max(image.cols, image.rows));
+  Future<List<TextBox>> _detect(cv.Mat image, int detMaxSide) async {
+    final scale = math.min(1.0, detMaxSide / math.max(image.cols, image.rows));
     final w = math.max(32, (image.cols * scale / 32).round() * 32);
     final h = math.max(32, (image.rows * scale / 32).round() * 32);
 

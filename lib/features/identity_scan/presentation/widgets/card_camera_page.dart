@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:camera/camera.dart';
@@ -27,7 +28,16 @@ class _CardCameraPageState extends State<CardCameraPage> {
   bool _flashOn = false;
   bool _flashBusy = false;
 
-  bool get _showsMrz => widget.side != DocumentSide.front;
+  /// Where the user last tapped to focus (preview pixels), for the focus ring.
+  Offset? _focusRing;
+  int _focusRingId = 0;
+  bool _focusRingDimmed = false;
+  Timer? _focusRingTimer;
+  Timer? _focusRingDimTimer;
+  DateTime? _tappedAt;
+
+  bool get _showsMrz =>
+      widget.kind.hasMrz && widget.side != DocumentSide.front;
 
   /// The MRZ sits right at the card's bottom edge, so on MRZ pages the photo
   /// is cropped a little wider than the frame: a card held slightly low or
@@ -56,6 +66,7 @@ class _CardCameraPageState extends State<CardCameraPage> {
       await controller.initialize();
       await controller.lockCaptureOrientation(DeviceOrientation.portraitUp);
       await controller.setFlashMode(FlashMode.off);
+      await _useAutoFocus(controller);
       if (!mounted) {
         await controller.dispose();
         return;
@@ -66,8 +77,72 @@ class _CardCameraPageState extends State<CardCameraPage> {
     }
   }
 
+  /// Continuous auto focus; some cameras do not support choosing a mode.
+  Future<void> _useAutoFocus(CameraController controller) async {
+    try {
+      await controller.setFocusMode(FocusMode.auto);
+      await controller.setExposureMode(ExposureMode.auto);
+    } catch (e) {
+      debugPrint('Focus mode unavailable: $e');
+    }
+  }
+
+  /// Focuses and meters exposure at [point], given as 0..1 of the preview.
+  /// Devices without a focus point ignore it, so failures are not shown.
+  Future<void> _focusAt(Offset point) async {
+    final controller = _controller;
+    if (controller == null) return;
+    try {
+      await controller.setFocusPoint(point);
+      await controller.setExposurePoint(point);
+    } catch (e) {
+      debugPrint('Focus point unavailable: $e');
+    }
+  }
+
+  void _onPreviewTap(Offset position, Size previewSize) {
+    if (_capturing) return;
+    _tappedAt = DateTime.now();
+    HapticFeedback.selectionClick();
+    _focusRingTimer?.cancel();
+    _focusRingDimTimer?.cancel();
+    setState(() {
+      _focusRing = position;
+      _focusRingId++;
+      _focusRingDimmed = false;
+    });
+    // Like the iOS camera: the box settles bright, dims, then goes away.
+    _focusRingDimTimer = Timer(const Duration(milliseconds: 900), () {
+      if (mounted) setState(() => _focusRingDimmed = true);
+    });
+    _focusRingTimer = Timer(const Duration(milliseconds: 2000), () {
+      if (mounted) setState(() => _focusRing = null);
+    });
+    _focusAt(Offset(
+      (position.dx / previewSize.width).clamp(0.0, 1.0),
+      (position.dy / previewSize.height).clamp(0.0, 1.0),
+    ));
+  }
+
+  /// Refocuses on the middle of the card frame just before the photo, unless
+  /// the user chose a focus point a moment ago.
+  Future<void> _focusBeforeCapture(CardFrame frame) async {
+    final tapped = _tappedAt;
+    if (tapped != null &&
+        DateTime.now().difference(tapped) < const Duration(seconds: 3)) {
+      return;
+    }
+    await _focusAt(Offset(
+      (frame.left + frame.right) / 2,
+      (frame.top + frame.bottom) / 2,
+    ));
+    await Future<void>.delayed(const Duration(milliseconds: 400));
+  }
+
   @override
   void dispose() {
+    _focusRingTimer?.cancel();
+    _focusRingDimTimer?.cancel();
     final controller = _controller;
     if (controller != null) {
       // Leaving with the back button: switch the torch off before releasing.
@@ -138,6 +213,7 @@ class _CardCameraPageState extends State<CardCameraPage> {
     if (controller == null || _capturing) return;
     setState(() => _capturing = true);
     try {
+      await _focusBeforeCapture(frame);
       final photo = await controller.takePicture();
       final cropFrame = _showsMrz ? frame.expanded(_mrzCropMargin) : frame;
       final cropped = await locator<ImageOps>().crop(
@@ -149,9 +225,19 @@ class _CardCameraPageState extends State<CardCameraPage> {
         portrait: true,
         label: 'card_${widget.side.name}',
       );
+      // A certificate is flattened to a straight A4 sheet when its outline is
+      // found; otherwise the plain crop is kept.
+      var result = cropped;
+      if (widget.kind == DocumentKind.civilRegistryCertificate) {
+        final flat = await locator<ImageOps>().cropPage(cropped, label: 'certificate');
+        if (flat != null) {
+          await locator<ImageOps>().deleteTemp(cropped);
+          result = flat;
+        }
+      }
       await File(photo.path).delete().catchError((_) => File(photo.path));
       await _releaseCamera();
-      if (mounted) Navigator.of(context).pop(cropped);
+      if (mounted) Navigator.of(context).pop(result);
     } catch (e) {
       if (mounted) {
         setState(() => _capturing = false);
@@ -216,12 +302,34 @@ class _CardCameraPageState extends State<CardCameraPage> {
                     return Stack(
                       fit: StackFit.expand,
                       children: [
-                        CameraPreview(controller),
-                        CardFrameOverlay(
-                          frame: frame,
-                          mrzBandFraction:
-                              _showsMrz ? widget.kind.mrzGuideFraction : null,
+                        GestureDetector(
+                          behavior: HitTestBehavior.opaque,
+                          onTapUp: (d) =>
+                              _onPreviewTap(d.localPosition, constraints.biggest),
+                          child: CameraPreview(controller),
                         ),
+                        // The overlay is a full-size CustomPaint, which would
+                        // otherwise swallow the taps meant for the preview.
+                        IgnorePointer(
+                          child: CardFrameOverlay(
+                            frame: frame,
+                            mrzBandFraction:
+                                _showsMrz ? widget.kind.mrzGuideFraction : null,
+                          ),
+                        ),
+                        if (_focusRing != null)
+                          Positioned(
+                            left: (_focusRing!.dx - _FocusIndicator.size / 2)
+                                .clamp(0.0, constraints.maxWidth - _FocusIndicator.size),
+                            top: (_focusRing!.dy - _FocusIndicator.size / 2)
+                                .clamp(0.0, constraints.maxHeight - _FocusIndicator.size),
+                            child: IgnorePointer(
+                              child: _FocusIndicator(
+                                key: ValueKey(_focusRingId),
+                                dimmed: _focusRingDimmed,
+                              ),
+                            ),
+                          ),
                         Positioned(
                           left: 16,
                           right: 16,
@@ -290,4 +398,64 @@ class _ShutterButton extends StatelessWidget {
       ),
     );
   }
+}
+
+/// Focus indicator: a thin white circle. It starts large, snaps in to size,
+/// then dims.
+class _FocusIndicator extends StatelessWidget {
+  const _FocusIndicator({super.key, required this.dimmed});
+
+  static const size = 76.0;
+
+  final bool dimmed;
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedOpacity(
+      opacity: dimmed ? 0.5 : 1,
+      duration: const Duration(milliseconds: 400),
+      child: TweenAnimationBuilder<double>(
+        tween: Tween(begin: 1.45, end: 1),
+        duration: const Duration(milliseconds: 280),
+        curve: Curves.easeOutCubic,
+        builder: (context, scale, child) =>
+            Transform.scale(scale: scale, child: child),
+        child: const SizedBox.square(
+          dimension: size,
+          child: CustomPaint(painter: _FocusBoxPainter()),
+        ),
+      ),
+    );
+  }
+}
+
+class _FocusBoxPainter extends CustomPainter {
+  const _FocusBoxPainter();
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final center = size.center(Offset.zero);
+    // Inset so the stroke is not clipped at the edge of the box.
+    final radius = size.shortestSide / 2 - 2;
+    // A faint dark outline keeps the thin white line visible on light cards.
+    canvas.drawCircle(
+      center,
+      radius,
+      Paint()
+        ..color = Colors.black26
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 2.2,
+    );
+    canvas.drawCircle(
+      center,
+      radius,
+      Paint()
+        ..color = Colors.white
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 1,
+    );
+  }
+
+  @override
+  bool shouldRepaint(_FocusBoxPainter oldDelegate) => false;
 }

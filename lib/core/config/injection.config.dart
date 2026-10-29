@@ -16,6 +16,10 @@ import '../../features/identity_scan/data/identity_scan_service.dart' as _i201;
 import '../../features/identity_scan/data/image/image_ops.dart' as _i507;
 import '../../features/identity_scan/data/mrz/mrz_reader.dart' as _i537;
 import '../../features/identity_scan/data/ocr/ocr_engine.dart' as _i77;
+import '../../features/identity_scan/data/ocr/paddle/civil_registry/civil_registry_scan_service.dart'
+    as _i338;
+import '../../features/identity_scan/data/ocr/paddle/civil_registry/civil_registry_text_reader.dart'
+    as _i71;
 import '../../features/identity_scan/data/ocr/paddle/paddle_ocr_engine.dart'
     as _i800;
 import '../../features/identity_scan/data/ocr/paddle/passport/mlkit_latin_reader.dart'
@@ -38,10 +42,22 @@ _i174.GetIt $initGetIt(
   gh.lazySingleton<_i77.OcrEngine>(() => _i77.OcrEngine());
   gh.lazySingleton<_i800.PaddleOcrEngine>(() => _i800.PaddleOcrEngine());
   gh.lazySingleton<_i487.MlKitLatinReader>(() => _i487.MlKitLatinReader());
+  gh.lazySingleton<_i71.CivilRegistryTextReader>(
+    () => _i71.CivilRegistryTextReader(
+      gh<_i800.PaddleOcrEngine>(),
+      gh<_i487.MlKitLatinReader>(),
+    ),
+  );
   gh.lazySingleton<_i453.PaddlePassportTextReader>(
     () => _i453.PaddlePassportTextReader(
       gh<_i800.PaddleOcrEngine>(),
       gh<_i487.MlKitLatinReader>(),
+    ),
+  );
+  gh.lazySingleton<_i338.CivilRegistryScanService>(
+    () => _i338.CivilRegistryScanService(
+      gh<_i71.CivilRegistryTextReader>(),
+      gh<_i507.ImageOps>(),
     ),
   );
   gh.lazySingleton<_i235.PaddlePassportMrzReader>(

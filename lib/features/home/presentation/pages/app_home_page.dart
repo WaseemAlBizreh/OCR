@@ -22,7 +22,7 @@ class AppHomePage extends StatelessWidget {
             ),
             const SizedBox(height: 8),
             Text(
-              'Scan the front and back of a Sudan ID, or a passport. The MRZ is validated and combined with the printed fields.',
+              'Scan the front and back of a Sudan ID, a passport, or a civil registry certificate. The MRZ is validated and combined with the printed fields.',
               style: Theme.of(context).textTheme.bodyMedium,
             ),
             const SizedBox(height: 32),
@@ -40,6 +40,14 @@ class AppHomePage extends StatelessWidget {
               ),
               icon: const Icon(Icons.auto_awesome_outlined),
               label: const Text('Passport'),
+            ),
+            const SizedBox(height: 12),
+            FilledButton.tonalIcon(
+              onPressed: () => context.router.push(
+                IdentityFlowRoute(kind: DocumentKind.civilRegistryCertificate),
+              ),
+              icon: const Icon(Icons.description_outlined),
+              label: const Text('Civil registry certificate (A4)'),
             ),
           ],
         ),

@@ -1,24 +1,31 @@
 enum DocumentKind {
   sudanId,
   passport,
+  civilRegistryCertificate,
 }
 
 extension DocumentKindInfo on DocumentKind {
   String get label => switch (this) {
         DocumentKind.sudanId => 'Sudan ID card',
         DocumentKind.passport => 'Passport',
+        DocumentKind.civilRegistryCertificate => 'Civil registry certificate',
       };
 
   /// Pages the user has to scan, in order.
   List<DocumentSide> get sides => switch (this) {
         DocumentKind.sudanId => const [DocumentSide.front, DocumentSide.back],
         DocumentKind.passport => const [DocumentSide.dataPage],
+        DocumentKind.civilRegistryCertificate => const [DocumentSide.page],
       };
+
+  /// Whether the document has a machine-readable zone to guide and read.
+  bool get hasMrz => this != DocumentKind.civilRegistryCertificate;
 
   /// Width / height of the physical document (ID-1 card or ID-3 data page).
   double get aspectRatio => switch (this) {
         DocumentKind.sudanId => 85.6 / 54.0,
         DocumentKind.passport => 125.0 / 88.0,
+        DocumentKind.civilRegistryCertificate => 210.0 / 297.0, // A4 portrait
       };
 
   /// Fraction of the cropped image height, from the bottom, that the MRZ
@@ -27,6 +34,7 @@ extension DocumentKindInfo on DocumentKind {
   double get mrzBandFraction => switch (this) {
         DocumentKind.sudanId => 0.42,
         DocumentKind.passport => 0.32,
+        DocumentKind.civilRegistryCertificate => 0,
       };
 
   /// Height of the MRZ guide drawn on the camera screen, as a fraction of the
@@ -35,6 +43,7 @@ extension DocumentKindInfo on DocumentKind {
   double get mrzGuideFraction => switch (this) {
         DocumentKind.sudanId => 0.34,
         DocumentKind.passport => 0.25,
+        DocumentKind.civilRegistryCertificate => 0,
       };
 
   /// How to take the photos, shown on the preview page.
@@ -51,6 +60,12 @@ extension DocumentKindInfo on DocumentKind {
             'Avoid glare on the photo and the laminate. If a bright spot appears, tilt the page slightly.',
             _flashTip,
           ],
+        DocumentKind.civilRegistryCertificate => const [
+            'Lay the certificate flat on a dark, plain surface in good light.',
+            'Fit the whole page inside the frame, with its four corners visible, and hold the phone steady and straight above it.',
+            'Avoid shadows and glare, especially over the stamp and the printed lines.',
+            _flashTip,
+          ],
       };
 
   static const _flashTip =
@@ -62,6 +77,7 @@ extension DocumentKindInfo on DocumentKind {
         DocumentKind.sudanId =>
           'You will capture the front of the card first, then the back.',
         DocumentKind.passport => 'You will capture the data page.',
+        DocumentKind.civilRegistryCertificate => 'You will capture the whole certificate page.',
       };
 
   /// What to look for in each photo before scanning.
@@ -76,6 +92,11 @@ extension DocumentKindInfo on DocumentKind {
             'The two lines of letters and < signs at the bottom (the MRZ) are complete.',
             'No finger, shadow or reflection covers any text.',
           ],
+        DocumentKind.civilRegistryCertificate => const [
+            'All four corners of the page are inside the photo and the text is sharp.',
+            'The registry office, the dates and the national number are fully visible.',
+            'No finger, shadow or reflection covers any text.',
+          ],
       };
 }
 
@@ -83,6 +104,7 @@ enum DocumentSide {
   front,
   back,
   dataPage,
+  page,
 }
 
 extension DocumentSideInfo on DocumentSide {
@@ -90,6 +112,7 @@ extension DocumentSideInfo on DocumentSide {
         DocumentSide.front => 'Front',
         DocumentSide.back => 'Back',
         DocumentSide.dataPage => 'Data page',
+        DocumentSide.page => 'Certificate',
       };
 
   String get hint => switch (this) {
@@ -98,5 +121,7 @@ extension DocumentSideInfo on DocumentSide {
           'Fit the back of the ID card inside the frame (MRZ visible)',
         DocumentSide.dataPage =>
           'Fit the passport data page inside the frame (MRZ visible)',
+        DocumentSide.page =>
+          'Fit the whole certificate page inside the frame',
       };
 }

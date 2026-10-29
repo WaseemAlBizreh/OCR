@@ -7,6 +7,7 @@ import 'package:mrz/features/identity_scan/data/identity_scan_service.dart';
 import 'package:mrz/features/identity_scan/data/ocr/ocr_engine.dart';
 import 'package:mrz/features/identity_scan/data/ocr/paddle/paddle_latin_hybrid_recognizer.dart';
 import 'package:mrz/features/identity_scan/data/ocr/paddle/paddle_ocr_engine.dart';
+import 'package:mrz/features/identity_scan/data/ocr/paddle/civil_registry/civil_registry_scan_service.dart';
 import 'package:mrz/features/identity_scan/data/ocr/paddle/passport/paddle_passport_scan_service.dart';
 import 'package:mrz/features/identity_scan/data/ocr/paddle/paddle_sudan_card_parser.dart';
 import 'package:mrz/features/identity_scan/domain/document_kind.dart';
@@ -109,22 +110,30 @@ class _IdentityFlowPageState extends State<IdentityFlowPage> {
       final stopwatch = Stopwatch()..start();
       // Passports use their own pipeline (ML Kit + Paddle); everything else
       // goes through the shared service.
-      final result = widget.kind == DocumentKind.passport
-          ? await locator<PaddlePassportScanService>()
-              .scan(_originals[DocumentSide.dataPage]!)
-          : await _service.scan(
-              kind: widget.kind,
-              imagePaths: {
-                for (final side in widget.kind.sides) side: _originals[side]!,
-              },
-              cardText: PaddleLatinHybridRecognizer(
-                locator<PaddleOcrEngine>(),
-                locator<OcrEngine>(),
-              ),
-              parseFront: _paddleParser.parseFront,
-              parseBack: _paddleParser.parseBack,
-              includeRawText: true,
-            );
+      final Map<String, dynamic> resultJson;
+      if (widget.kind == DocumentKind.civilRegistryCertificate) {
+        resultJson = (await locator<CivilRegistryScanService>()
+                .scan(_originals[DocumentSide.page]!))
+            .toJson();
+      } else {
+        final result = widget.kind == DocumentKind.passport
+            ? await locator<PaddlePassportScanService>()
+                .scan(_originals[DocumentSide.dataPage]!)
+            : await _service.scan(
+                kind: widget.kind,
+                imagePaths: {
+                  for (final side in widget.kind.sides) side: _originals[side]!,
+                },
+                cardText: PaddleLatinHybridRecognizer(
+                  locator<PaddleOcrEngine>(),
+                  locator<OcrEngine>(),
+                ),
+                parseFront: _paddleParser.parseFront,
+                parseBack: _paddleParser.parseBack,
+                includeRawText: true,
+              );
+        resultJson = result.toJson();
+      }
       stopwatch.stop();
       if (!mounted) return;
       setState(() => _busyLabel = null);
@@ -137,7 +146,7 @@ class _IdentityFlowPageState extends State<IdentityFlowPage> {
         ),
         builder: (_) => JsonResultSheet(
           resultJson: {
-            ...result.toJson(),
+            ...resultJson,
             'engine': 'paddle+mlkit-latin',
             'scanMs': stopwatch.elapsedMilliseconds,
           },
