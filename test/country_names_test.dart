@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:mrz/features/identity_scan/data/ocr/paddle/passport/country_names.dart';
+import 'package:idlens/src/data/ocr/paddle/passport/country_names.dart';
 
 void main() {
   test('resolves ICAO codes to country names', () {

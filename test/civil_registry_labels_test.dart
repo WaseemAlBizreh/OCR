@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:mrz/features/identity_scan/data/ocr/paddle/civil_registry/certificate_labels.dart';
+import 'package:idlens/src/data/ocr/paddle/civil_registry/certificate_labels.dart';
 
 CertificateField? exact(String text) {
   final hits = CertificateLabels.hitsIn(text);
@@ -42,7 +42,10 @@ void main() {
       expect(exact('الجنسذكر'), CertificateField.gender);
       expect(exact('الجنسنكر'), CertificateField.gender);
       expect(exact('الجنسنذكر'), CertificateField.gender);
-      expect(exact('الحالة الاجتماعيةغير متزوج'), CertificateField.maritalStatus);
+      expect(
+        exact('الحالة الاجتماعيةغير متزوج'),
+        CertificateField.maritalStatus,
+      );
       expect(exact('الجنسية'), isNot(CertificateField.gender));
     });
 

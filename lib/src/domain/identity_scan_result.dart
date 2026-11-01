@@ -1,0 +1,72 @@
+import 'package:idlens/src/domain/document_kind.dart';
+import 'package:idlens/src/domain/mrz_data.dart';
+
+class IdentityScanResult {
+  IdentityScanResult({
+    required this.documentKind,
+    required this.identity,
+    this.frontFields,
+    this.backFields,
+    this.dataPageFields,
+    this.mrz,
+    this.mrzAttempts = const [],
+    this.frameTouchedSides,
+    this.imagePaths = const {},
+    this.rawText = const {},
+    this.warnings = const [],
+    DateTime? scannedAt,
+  }) : scannedAt = scannedAt ?? DateTime.now();
+
+  final DocumentKind documentKind;
+
+  /// Merged, cross-checked fields: the payload consumers should read.
+  final Map<String, dynamic> identity;
+  final Map<String, String?>? frontFields;
+  final Map<String, String?>? backFields;
+
+  /// Printed fields of a passport data page.
+  final Map<String, String?>? dataPageFields;
+  final MrzData? mrz;
+  final List<Map<String, dynamic>> mrzAttempts;
+
+  /// How many edges of the photo printed text runs up to (0 to 4), or null
+  /// when not measured. Two or more means the document is cut off.
+  final int? frameTouchedSides;
+  final Map<DocumentSide, String> imagePaths;
+
+  /// What OCR read from a passport data page, before parsing. Debug aid for
+  /// the printed-field parser.
+  final Map<DocumentSide, String> rawText;
+  final List<String> warnings;
+  final DateTime scannedAt;
+
+  /// How many printed fields (front, back or data page) were read.
+  int get recognizedFieldCount =>
+      [frontFields, backFields, dataPageFields].fold(
+        0,
+        (count, fields) =>
+            count +
+            (fields?.values.where((v) => v != null && v.isNotEmpty).length ??
+                0),
+      );
+
+  Map<String, dynamic> toJson() => {
+    'documentKind': documentKind.name,
+    'identity': identity,
+    'mrz': mrz?.toJson(),
+    'front': frontFields,
+    'back': backFields,
+    if (dataPageFields != null) 'dataPage': dataPageFields,
+    'warnings': warnings,
+    'images': {
+      for (final entry in imagePaths.entries) entry.key.name: entry.value,
+    },
+    if (rawText.isNotEmpty)
+      'rawText': {
+        for (final entry in rawText.entries) entry.key.name: entry.value,
+      },
+    'mrzAttempts': mrzAttempts,
+    if (frameTouchedSides != null) 'frameTouchedSides': frameTouchedSides,
+    'scannedAt': scannedAt.toIso8601String(),
+  };
+}

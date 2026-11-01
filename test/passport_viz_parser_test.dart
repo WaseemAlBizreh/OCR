@@ -1,7 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:mrz/features/identity_scan/data/front/passport_viz_parser.dart';
-import 'package:mrz/features/identity_scan/data/mrz/mrz_parser.dart';
-import 'package:mrz/features/identity_scan/domain/mrz_data.dart';
+import 'package:idlens/src/data/front/passport_viz_parser.dart';
+import 'package:idlens/src/data/mrz/mrz_parser.dart';
+import 'package:idlens/src/domain/mrz_data.dart';
 
 void main() {
   const parser = PassportVizParser();
@@ -15,13 +15,16 @@ void main() {
     const doc = 'P05000040', dob = '920923', exp = '270516';
     final personal = '11974221992'.padRight(14, '<');
     final line1 = 'P<SDNOSMAN<<MERGHANI<MEKKI<MERGHANI'.padRight(44, '<');
-    final composite =
-        cd('$doc${cd(doc)}$dob${cd(dob)}$exp${cd(exp)}$personal${cd(personal)}');
-    final line2 = '$doc${cd(doc)}SDN$dob${cd(dob)}M$exp${cd(exp)}'
+    final composite = cd(
+      '$doc${cd(doc)}$dob${cd(dob)}$exp${cd(exp)}$personal${cd(personal)}',
+    );
+    final line2 =
+        '$doc${cd(doc)}SDN$dob${cd(dob)}M$exp${cd(exp)}'
         '$personal${cd(personal)}$composite';
     mrzLines = '$line1\n$line2';
-    mrz = MrzParser(clock: () => DateTime(2026, 10, 28))
-        .parseLines([line1, line2], MrzFormat.td3)!;
+    mrz = MrzParser(
+      clock: () => DateTime(2026, 10, 28),
+    ).parseLines([line1, line2], MrzFormat.td3)!;
   });
 
   const header = 'REPUBLIC OF THE SUDAN\nجمهورية السودان\n';
@@ -32,7 +35,8 @@ void main() {
   });
 
   test('reads English and Arabic labelled fields', () {
-    final fields = parser.parse('''${header}Passport Type P   Country Code SDN   Passport No P05000040
+    final fields = parser.parse(
+      '''${header}Passport Type P   Country Code SDN   Passport No P05000040
 Full Name MERGHANI MEKKI MERGHANI OSMAN
 الاسم الكامل ميرغني مكي ميرغني عثمان
 Nationality SUDANESE
@@ -42,7 +46,9 @@ Place of Birth OMDURMAN   مكان الميلاد امدرمان
 Date of Issue 17-05-2022
 Place of Issue KHARTOUM   مكان الإصدار الخرطوم
 Date of Expiry 16-05-2027
-$mrzLines''', mrz: mrz).fields;
+$mrzLines''',
+      mrz: mrz,
+    ).fields;
 
     expect(fields['passportNumber'], 'P05000040');
     expect(fields['arabicName'], 'ميرغني مكي ميرغني عثمان');
@@ -76,13 +82,16 @@ Omdurman''', mrz: mrz).fields;
     expect(fields['placeOfBirth'], 'OMDURMAN');
   });
 
-  test('prefers the date that fits a whole-year validity among noise dates', () {
-    final fields = parser.parse('''${header}23-09-1992
+  test(
+    'prefers the date that fits a whole-year validity among noise dates',
+    () {
+      final fields = parser.parse('''${header}23-09-1992
 01-01-2015
 17-05-2017
 16-05-2027''', mrz: mrz).fields;
-    expect(fields['issueDate'], '2017/05/17');
-  });
+      expect(fields['issueDate'], '2017/05/17');
+    },
+  );
 
   test('without an MRZ, three dates are birth, issue, expiry in order', () {
     final fields = parser.parse('''${header}23-09-1992

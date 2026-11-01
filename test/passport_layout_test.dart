@@ -1,10 +1,15 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:mrz/features/identity_scan/data/ocr/paddle/passport/passport_labels.dart';
-import 'package:mrz/features/identity_scan/data/ocr/paddle/passport/passport_layout.dart';
-import 'package:mrz/features/identity_scan/data/ocr/paddle/passport/passport_line.dart';
+import 'package:idlens/src/data/ocr/paddle/passport/passport_labels.dart';
+import 'package:idlens/src/data/ocr/paddle/passport/passport_layout.dart';
+import 'package:idlens/src/data/ocr/paddle/passport/passport_line.dart';
 
-PassportLine line(String text, double left, double top, {double width = 200, double height = 20}) =>
-    PassportLine(text, left, top, left + width, top + height);
+PassportLine line(
+  String text,
+  double left,
+  double top, {
+  double width = 200,
+  double height = 20,
+}) => PassportLine(text, left, top, left + width, top + height);
 
 List<PassportLine> candidates(PassportLine label, List<PassportLine> all) {
   final labels = {
@@ -23,22 +28,49 @@ void main() {
     });
 
     test('NAME does not match inside SURNAME or GIVEN NAMES', () {
-      expect(PassportLabels.hitsIn('Surname').single.field, PassportField.other);
-      expect(PassportLabels.hitsIn('Given names').single.field, PassportField.other);
-      expect(PassportLabels.hitsIn('Full name').single.field, PassportField.arabicName);
+      expect(
+        PassportLabels.hitsIn('Surname').single.field,
+        PassportField.other,
+      );
+      expect(
+        PassportLabels.hitsIn('Given names').single.field,
+        PassportField.other,
+      );
+      expect(
+        PassportLabels.hitsIn('Full name').single.field,
+        PassportField.arabicName,
+      );
     });
 
     test('tolerates OCR look-alikes and Arabic spelling variants', () {
-      expect(PassportLabels.hitsIn('DATE 0F B1RTH').single.field, PassportField.birthDate);
-      expect(PassportLabels.hitsIn('PLACE 0F BIRTH').single.field, PassportField.birthPlace);
-      expect(PassportLabels.hitsIn('Dote of birth'), isEmpty); // a wrong letter is not a look-alike
-      expect(PassportLabels.hitsIn('تاريخ الإصدار').single.field, PassportField.issueDate);
-      expect(PassportLabels.hitsIn('تاريخ الاصدار').single.field, PassportField.issueDate);
+      expect(
+        PassportLabels.hitsIn('DATE 0F B1RTH').single.field,
+        PassportField.birthDate,
+      );
+      expect(
+        PassportLabels.hitsIn('PLACE 0F BIRTH').single.field,
+        PassportField.birthPlace,
+      );
+      expect(
+        PassportLabels.hitsIn('Dote of birth'),
+        isEmpty,
+      ); // a wrong letter is not a look-alike
+      expect(
+        PassportLabels.hitsIn('تاريخ الإصدار').single.field,
+        PassportField.issueDate,
+      );
+      expect(
+        PassportLabels.hitsIn('تاريخ الاصدار').single.field,
+        PassportField.issueDate,
+      );
     });
 
     test('two labels on one line are both found, left to right', () {
       final hits = PassportLabels.hitsIn('Date of birth  Sex');
-      expect(hits.map((h) => h.field), [PassportField.birthDate, PassportField.other]);
+      expect(hits.map((h) => h.field), [
+        PassportField.birthDate,
+        PassportField.other,
+      ]);
     });
   });
 

@@ -1,12 +1,17 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:mrz/features/identity_scan/data/ocr/paddle/civil_registry/certificate_labels.dart';
-import 'package:mrz/features/identity_scan/data/ocr/paddle/civil_registry/civil_registry_parser.dart';
-import 'package:mrz/features/identity_scan/data/ocr/paddle/passport/passport_line.dart';
+import 'package:idlens/src/data/ocr/paddle/civil_registry/certificate_labels.dart';
+import 'package:idlens/src/data/ocr/paddle/civil_registry/civil_registry_parser.dart';
+import 'package:idlens/src/data/ocr/paddle/passport/passport_line.dart';
 
 /// A line placed as Paddle would: Arabic labels sit on the right of the row,
 /// their values to the left.
-PassportLine at(String text, double x, double y, [double width = 200, List<String> alts = const []]) =>
-    PassportLine(text, x, y, x + width, y + 20, alts: alts);
+PassportLine at(
+  String text,
+  double x,
+  double y, [
+  double width = 200,
+  List<String> alts = const [],
+]) => PassportLine(text, x, y, x + width, y + 20, alts: alts);
 
 PassportLine label(String text, double y, [List<String> alts = const []]) =>
     at(text, 500, y, 160, alts);
@@ -17,21 +22,33 @@ void main() {
   const parser = CivilRegistryParser();
 
   List<PassportLine> fullPage() => [
-        at('جمهورية السودان', 250, 0, 300),
-        at('شهادة قيد مدني', 250, 30, 300),
-        label('مكتب التسجيل', 80), value('الخرطوم', 80),
-        label('تاريخ استخراج الشهادة', 120), value('2026/10/05', 120),
-        label('الرقم الوطني', 160), value('12345678901', 160),
-        label('الاسم', 200), value('محمد احمد عثمان علي', 200),
-        label('مكان الميلاد', 240), value('امدرمان', 240),
-        label('تاريخ الميلاد', 280), value('1990/03/15', 280),
-        label('الحالة الاجتماعية', 320), value('متزوج', 320),
-        label('الجنس', 360), value('ذكر', 360),
-        label('نوع الجنسية', 400), value('بالميلاد', 400),
-        label('المهنة', 440), value('مهندس', 440),
-        label('عنوان العمل', 480), value('الخرطوم بحري', 480),
-        label('اسم الوالدة', 520), value('فاطمة محمد حسن', 520),
-      ];
+    at('جمهورية السودان', 250, 0, 300),
+    at('شهادة قيد مدني', 250, 30, 300),
+    label('مكتب التسجيل', 80),
+    value('الخرطوم', 80),
+    label('تاريخ استخراج الشهادة', 120),
+    value('2026/10/05', 120),
+    label('الرقم الوطني', 160),
+    value('12345678901', 160),
+    label('الاسم', 200),
+    value('محمد احمد عثمان علي', 200),
+    label('مكان الميلاد', 240),
+    value('امدرمان', 240),
+    label('تاريخ الميلاد', 280),
+    value('1990/03/15', 280),
+    label('الحالة الاجتماعية', 320),
+    value('متزوج', 320),
+    label('الجنس', 360),
+    value('ذكر', 360),
+    label('نوع الجنسية', 400),
+    value('بالميلاد', 400),
+    label('المهنة', 440),
+    value('مهندس', 440),
+    label('عنوان العمل', 480),
+    value('الخرطوم بحري', 480),
+    label('اسم الوالدة', 520),
+    value('فاطمة محمد حسن', 520),
+  ];
 
   test('reads all twelve fields from a label: value page', () {
     final page = parser.parse(fullPage());
@@ -69,9 +86,12 @@ void main() {
 
   test('lost dots in several labels', () {
     final lines = [
-      label('تاريخ المبلاد', 80), value('1990/03/15', 80),
-      label('مكان المبلاد', 120), value('امدرمان', 120),
-      label('الحالة الاجتماعبة', 160), value('مترزج', 160),
+      label('تاريخ المبلاد', 80),
+      value('1990/03/15', 80),
+      label('مكان المبلاد', 120),
+      value('امدرمان', 120),
+      label('الحالة الاجتماعبة', 160),
+      value('مترزج', 160),
     ];
     final page = parser.parse(lines);
     expect(page.fields['dateOfBirth'], '1990-03-15');
@@ -81,7 +101,8 @@ void main() {
 
   test("the other engine's reading rescues a garbled label", () {
     final lines = [
-      label('رقم وط', 160, const ['الرقم الوطني']), value('12345678901', 160),
+      label('رقم وط', 160, const ['الرقم الوطني']),
+      value('12345678901', 160),
     ];
     expect(parser.parse(lines).fields['nationalNumber'], '12345678901');
   });
@@ -95,14 +116,18 @@ void main() {
   });
 
   test('the value may follow the label on the same line', () {
-    final lines = [at('الجنس: ذكر', 300, 100, 260), at('المهنة : طبيب', 300, 140, 260)];
+    final lines = [
+      at('الجنس: ذكر', 300, 100, 260),
+      at('المهنة : طبيب', 300, 140, 260),
+    ];
     final page = parser.parse(lines);
     expect(page.fields['gender'], 'M');
     expect(page.fields['profession'], 'طبيب');
   });
 
   test('a missing field stays null and is reported', () {
-    final lines = fullPage()..removeWhere((l) => l.text == 'مهندس' || l.text == 'المهنة');
+    final lines = fullPage()
+      ..removeWhere((l) => l.text == 'مهندس' || l.text == 'المهنة');
     final page = parser.parse(lines);
     expect(page.fields['profession'], isNull);
     expect(page.fields['name'], isNotNull);
@@ -125,10 +150,7 @@ void main() {
   });
 
   test('a heading is never taken as a value', () {
-    final lines = [
-      at('شهادة قيد مدني', 250, 0, 300),
-      label('الاسم', 80),
-    ];
+    final lines = [at('شهادة قيد مدني', 250, 0, 300), label('الاسم', 80)];
     expect(parser.parse(lines).fields['name'], isNull);
   });
 
@@ -141,9 +163,18 @@ void main() {
     });
 
     test('الجنسذكر (label glued to value) gives gender M', () {
-      expect(parser.parse([at('الجنسذكر', 300, 100, 260)]).fields['gender'], 'M');
-      expect(parser.parse([at('الجنسأنثى', 300, 100, 260)]).fields['gender'], 'F');
-      expect(parser.parse([at('الجنسنذكر', 300, 100, 260)]).fields['gender'], 'M');
+      expect(
+        parser.parse([at('الجنسذكر', 300, 100, 260)]).fields['gender'],
+        'M',
+      );
+      expect(
+        parser.parse([at('الجنسأنثى', 300, 100, 260)]).fields['gender'],
+        'F',
+      );
+      expect(
+        parser.parse([at('الجنسنذكر', 300, 100, 260)]).fields['gender'],
+        'M',
+      );
     });
 
     test('نكر is read as ذكر', () {
@@ -169,20 +200,28 @@ void main() {
     });
 
     test('dates whose labels were lost are told apart by order', () {
-      final page = parser.parse([at('2026/10/05', 100, 100, 150), at('1990/03/15', 100, 140, 150)]);
+      final page = parser.parse([
+        at('2026/10/05', 100, 100, 150),
+        at('1990/03/15', 100, 140, 150),
+      ]);
       expect(page.fields['dateOfBirth'], '1990-03-15');
       expect(page.fields['issueDate'], '2026-10-05');
     });
 
-    test('the label line is found even glued to a stray digit: الرقمالوطنى4', () {
-      final glued = at('الرقمالوطنى4', 100, 100, 560);
-      final found =
-          parser.labelLine(CertificateField.nationalNumber, [glued, at('الاسم', 100, 140)]);
-      expect(found?.text, glued.text);
-      expect(found?.left, glued.left);
-      expect(found?.top, glued.top);
-      expect(parser.labelLine(CertificateField.profession, [glued]), isNull);
-    });
+    test(
+      'the label line is found even glued to a stray digit: الرقمالوطنى4',
+      () {
+        final glued = at('الرقمالوطنى4', 100, 100, 560);
+        final found = parser.labelLine(CertificateField.nationalNumber, [
+          glued,
+          at('الاسم', 100, 140),
+        ]);
+        expect(found?.text, glued.text);
+        expect(found?.left, glued.left);
+        expect(found?.top, glued.top);
+        expect(parser.labelLine(CertificateField.profession, [glued]), isNull);
+      },
+    );
 
     test('an empty work address stays empty next to the officer heading', () {
       final page = parser.parse([
@@ -203,14 +242,32 @@ void main() {
     });
 
     test('snap to a closed vocabulary', () {
-      expect(CivilRegistryParser.snap('اعزب', CivilRegistryParser.maritalValues), 'أعزب');
-      expect(CivilRegistryParser.snap('مطلقه', CivilRegistryParser.maritalValues), 'مطلقة');
-      expect(CivilRegistryParser.snap('بالتجنس', CivilRegistryParser.nationalityTypeValues), 'بالتجنس');
-      expect(CivilRegistryParser.snap('الخرطوم', CivilRegistryParser.maritalValues), isNull);
+      expect(
+        CivilRegistryParser.snap('اعزب', CivilRegistryParser.maritalValues),
+        'أعزب',
+      );
+      expect(
+        CivilRegistryParser.snap('مطلقه', CivilRegistryParser.maritalValues),
+        'مطلقة',
+      );
+      expect(
+        CivilRegistryParser.snap(
+          'بالتجنس',
+          CivilRegistryParser.nationalityTypeValues,
+        ),
+        'بالتجنس',
+      );
+      expect(
+        CivilRegistryParser.snap('الخرطوم', CivilRegistryParser.maritalValues),
+        isNull,
+      );
     });
 
     test('national number', () {
-      expect(CivilRegistryParser.nationalNumber('1234 5678 901'), '12345678901');
+      expect(
+        CivilRegistryParser.nationalNumber('1234 5678 901'),
+        '12345678901',
+      );
       expect(CivilRegistryParser.nationalNumber('2026/10/05'), isNull);
       expect(CivilRegistryParser.nationalNumber('123'), isNull);
     });

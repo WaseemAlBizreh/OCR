@@ -1,6 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:mrz/features/identity_scan/domain/image_quality.dart';
-import 'package:mrz/features/identity_scan/domain/scan_issue.dart';
+import 'package:idlens/src/domain/image_quality.dart';
+import 'package:idlens/src/domain/scan_issue.dart';
 
 void main() {
   ImageQuality quality({
@@ -8,13 +8,12 @@ void main() {
     double brightness = 160,
     double glare = 0.02,
     double coverage = 0.9,
-  }) =>
-      ImageQuality(
-        sharpness: sharpness,
-        brightness: brightness,
-        glareShare: glare,
-        documentCoverage: coverage,
-      );
+  }) => ImageQuality(
+    sharpness: sharpness,
+    brightness: brightness,
+    glareShare: glare,
+    documentCoverage: coverage,
+  );
 
   test('a sharp, evenly lit band has no problem', () {
     expect(quality().problem, isNull);
@@ -40,7 +39,6 @@ void main() {
     );
   });
 
-
   test('the dim, unclear passport photo measured on a device is flagged', () {
     // sharpness 45.9, brightness 96.1, glare 0.00015
     expect(
@@ -61,20 +59,27 @@ void main() {
       );
     });
 
-    test('text cut off at two edges is documentNotInFrame even with an MRZ', () {
+    test(
+      'text cut off at two edges is documentNotInFrame even with an MRZ',
+      () {
+        expect(
+          ScanIssueResolver.resolve(
+            mrzIssue: null,
+            recognizedFields: 8,
+            frameTouchedSides: 2,
+          ),
+          ScanIssue.documentNotInFrame,
+        );
+      },
+    );
+
+    test('text at only one edge is accepted', () {
       expect(
         ScanIssueResolver.resolve(
           mrzIssue: null,
           recognizedFields: 8,
-          frameTouchedSides: 2,
+          frameTouchedSides: 1,
         ),
-        ScanIssue.documentNotInFrame,
-      );
-    });
-
-    test('text at only one edge is accepted', () {
-      expect(
-        ScanIssueResolver.resolve(mrzIssue: null, recognizedFields: 8, frameTouchedSides: 1),
         isNull,
       );
     });
@@ -123,7 +128,10 @@ void main() {
     });
 
     test('nothing wrong gives null', () {
-      expect(ScanIssueResolver.resolve(mrzIssue: null, recognizedFields: 9), isNull);
+      expect(
+        ScanIssueResolver.resolve(mrzIssue: null, recognizedFields: 9),
+        isNull,
+      );
     });
   });
 }

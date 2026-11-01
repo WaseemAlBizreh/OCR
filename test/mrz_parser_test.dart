@@ -1,6 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:mrz/features/identity_scan/data/mrz/mrz_parser.dart';
-import 'package:mrz/features/identity_scan/domain/mrz_data.dart';
+import 'package:idlens/src/data/mrz/mrz_parser.dart';
+import 'package:idlens/src/domain/mrz_data.dart';
 
 void main() {
   final parser = MrzParser(clock: () => DateTime(2026, 10, 28));
@@ -69,12 +69,15 @@ void main() {
   });
 
   group('K misread as filler', () {
-    const header = 'IDSDN0085936669<<<<<<<<<<<<<<<\n9209231M2705169SDN<<<<<<<<<<<4\n';
+    const header =
+        'IDSDN0085936669<<<<<<<<<<<<<<<\n9209231M2705169SDN<<<<<<<<<<<4\n';
 
     test('is removed from a trailing filler run, not left in the name', () {
       final mrz = parser.parseText('${header}SMITH<<MARK<<<K<K<<<<<<<<<<<<<')!;
       expect(mrz.givenNames, 'MARK');
-      final khalid = parser.parseText('${header}KARIM<<KHALID<K<<K<K<<<<<<<<<<')!;
+      final khalid = parser.parseText(
+        '${header}KARIM<<KHALID<K<<K<K<<<<<<<<<<',
+      )!;
       expect(khalid.givenNames, 'KHALID');
     });
 

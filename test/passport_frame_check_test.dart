@@ -1,6 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:mrz/features/identity_scan/data/ocr/paddle/passport/passport_frame_check.dart';
-import 'package:mrz/features/identity_scan/data/ocr/paddle/passport/passport_line.dart';
+import 'package:idlens/src/data/ocr/paddle/passport/passport_frame_check.dart';
+import 'package:idlens/src/data/ocr/paddle/passport/passport_line.dart';
 
 PassportLine line(double l, double t, double r, double b) =>
     PassportLine('SOME TEXT', l, t, r, b);
@@ -24,7 +24,10 @@ void main() {
 
   test('tiny noise at an edge is ignored', () {
     expect(
-      sides([PassportLine('ab', 0, 0, 5, 4), PassportLine('x', 995, 690, 1000, 700)]),
+      sides([
+        PassportLine('ab', 0, 0, 5, 4),
+        PassportLine('x', 995, 690, 1000, 700),
+      ]),
       0,
     );
   });

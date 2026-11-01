@@ -1,9 +1,10 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:mrz/features/identity_scan/data/ocr/paddle/ctc_decoder.dart';
-import 'package:mrz/features/identity_scan/data/ocr/paddle/rtl_reorder.dart';
+import 'package:idlens/src/data/ocr/paddle/ctc_decoder.dart';
+import 'package:idlens/src/data/ocr/paddle/rtl_reorder.dart';
 
-List<double> _step(int classes, int hot, [double p = 0.9]) =>
-    [for (var i = 0; i < classes; i++) i == hot ? p : 0.01];
+List<double> _step(int classes, int hot, [double p = 0.9]) => [
+  for (var i = 0; i < classes; i++) i == hot ? p : 0.01,
+];
 
 void main() {
   group('CtcDecoder', () {
