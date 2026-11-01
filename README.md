@@ -83,161 +83,241 @@ opens.
   minimum. The iOS simulator on Apple Silicon may not run ML Kit, so test on a
   real device.
 
-## How it works
+## Quick look
 
-Everything starts from one stateless class, **IdLens**. It has six methods: for
-each document, one that opens the built-in screens, and one that reads image
-files you already have.
+Everything starts from one stateless class, `IdLens`. It has six methods: for
+each document, one that opens the built-in screens (`scan...`) and one that
+reads image files you already have (`process...`).
 
 | Document | Built-in screens | From image files | Result |
 |---|---|---|---|
-| Sudan ID card | scanIdCard | processIdCard | IdCardResult |
-| Passport, any country | scanPassport | processPassport | PassportResult |
-| Civil registry certificate | scanCivilRegistry | processCivilRegistry | CivilRegistryResult |
+| Sudan ID card | `scanIdCard` | `processIdCard` | `IdCardResult` |
+| Passport, any country | `scanPassport` | `processPassport` | `PassportResult` |
+| Civil registry certificate | `scanCivilRegistry` | `processCivilRegistry` | `CivilRegistryResult` |
 
-A complete working app that uses every method is in the
-[example](example/lib/main.dart) folder. It has switches for each option and
-shows the result as JSON.
+```dart
+import 'package:idlens/idlens.dart';
+
+final result = await const IdLens().scanIdCard(context);
+
+if (result != null) {
+  print(result.status);        // ScanStatus.verified
+  print(result.englishName);   // the name read from the card
+  print(result.dateOfBirth);   // a real DateTime
+}
+```
+
+A complete app that uses every method, with the options as switches, is in
+[example/lib/main.dart](example/lib/main.dart).
 
 ## The APIs
 
-### scanIdCard
+### `scanIdCard`
+
+```dart
+Future<IdCardResult?> scanIdCard(
+  BuildContext context, {
+  IdCardScanOptions options = const IdCardScanOptions(),
+})
+```
 
 Opens the full capture flow on your app's navigator: an optional page of photo
 tips, the camera for the front, the camera for the back, a preview where the
 user can retake either side, and then the scan. The back of the card holds the
 MRZ.
 
-- **Takes:** a BuildContext and optional IdCardScanOptions.
-- **Returns:** an IdCardResult, or null only if the user leaves before
+- **Returns** an `IdCardResult`, or `null` only if the user leaves before
   capturing anything.
-- **Throws:** a ScanException only when no image could be captured, for
+- **Throws** a `ScanException` only when no image could be captured, for
   example camera permission denied, a camera failure, or the iOS setup missing.
 - If the user goes back after capturing some pages, you get a result with the
-  status incomplete that holds those images.
+  status `incomplete` that holds those images.
 - A blurry, dark or cut-off photo is shown to the user before reading, and they
   can retake it or choose Use anyway.
 
-### scanPassport
+### `scanPassport`
+
+```dart
+Future<PassportResult?> scanPassport(
+  BuildContext context, {
+  PassportScanOptions options = const PassportScanOptions(),
+})
+```
 
 The same flow for a single page: the data page with the photo and the two MRZ
-lines. It works for passports from any country. Returns a PassportResult, or
-null if the user leaves before capturing, and throws like scanIdCard.
+lines. It works for passports from any country. Returns `null` if the user
+leaves before capturing, and throws like `scanIdCard`.
 
-### scanCivilRegistry
+### `scanCivilRegistry`
+
+```dart
+Future<CivilRegistryResult?> scanCivilRegistry(
+  BuildContext context, {
+  CivilRegistryScanOptions options = const CivilRegistryScanOptions(),
+})
+```
 
 The same flow for one A4 certificate page. The camera straightens the page into
 a flat sheet when it can find the four corners. This document has no MRZ.
-Returns a CivilRegistryResult, or null if the user leaves before capturing, and
-throws like scanIdCard.
+Returns `null` if the user leaves before capturing, and throws like
+`scanIdCard`.
 
-### processIdCard
+### `processIdCard`
 
-Reads two photos you already have, the front and the back. There are no screens,
-no camera and no BuildContext, so it suits your own camera, a gallery picker or
-images that came from a server.
+```dart
+Future<IdCardResult> processIdCard({
+  required File front,
+  required File back,
+  IdCardScanOptions options = const IdCardScanOptions(),
+})
+```
 
-- **Takes:** the front file, the back file and optional IdCardScanOptions.
-- **Returns:** an IdCardResult. Never null.
-- **Throws:** a ScanException with the reason imageUnreadable if a file does
+Reads two photos you already have. There are no screens, no camera and no
+`BuildContext`, so it suits your own camera, a gallery picker or images that
+came from a server.
+
+- **Returns** an `IdCardResult`. Never `null`.
+- **Throws** a `ScanException` with the reason `imageUnreadable` if a file does
   not exist. Every other problem is reported on the result.
-- Your files are used as given and are never deleted by dispose.
+- Your files are used as given and are never deleted by `dispose()`.
 - For the best result, crop the card to fill the image, with the MRZ sharp and
   fully visible.
 
-### processPassport
+### `processPassport`
 
-Same as processIdCard, for the passport data page. Takes the data page file and
-returns a PassportResult.
+```dart
+Future<PassportResult> processPassport({
+  required File dataPage,
+  PassportScanOptions options = const PassportScanOptions(),
+})
+```
 
-### processCivilRegistry
+Same as `processIdCard`, for the passport data page.
 
-Same as processIdCard, for the certificate page. Takes the page file and returns
-a CivilRegistryResult.
+### `processCivilRegistry`
+
+```dart
+Future<CivilRegistryResult> processCivilRegistry({
+  required File page,
+  CivilRegistryScanOptions options = const CivilRegistryScanOptions(),
+})
+```
+
+Same as `processIdCard`, for the certificate page.
+
+### Using your own photos
+
+```dart
+final result = await const IdLens().processPassport(
+  dataPage: File(pickedImage.path),
+);
+
+if (result.status != ScanStatus.verified) {
+  // Show result.issues to the user, or send result.images for manual review.
+}
+result.dispose();
+```
 
 ## Options
 
-Each method takes an optional options object: IdCardScanOptions,
-PassportScanOptions or CivilRegistryScanOptions.
+Each method takes an optional options object: `IdCardScanOptions`,
+`PassportScanOptions` or `CivilRegistryScanOptions`.
+
+```dart
+await const IdLens().scanIdCard(
+  context,
+  options: const IdCardScanOptions(showTips: false, requireValidMrz: true),
+);
+```
 
 | Option | Default | What it does |
 |---|---|---|
-| showTips | true | Shows the page of photo tips before the camera. When false, the camera opens straight away. Only for the scan methods. |
-| requireValidMrz | false | While the MRZ is missing or its check digits fail, the user can only retake. When false, the user can continue and you decide what to do with the issues. Only for the scan methods, and not available for the certificate, which has no MRZ. |
+| `showTips` | `true` | Shows the page of photo tips before the camera. When `false`, the camera opens straight away. Only for the `scan...` methods. |
+| `requireValidMrz` | `false` | While the MRZ is missing or its check digits fail, the user can only retake. When `false`, the user can continue and you decide what to do with the issues. Only for the `scan...` methods, and not available for the certificate, which has no MRZ. |
 
 ## Results
 
-IdCardResult, PassportResult and CivilRegistryResult all extend **ScanOutcome**,
-so the same members are on every result.
+`IdCardResult`, `PassportResult` and `CivilRegistryResult` all extend
+`ScanOutcome`, so the same members are on every result.
 
 | Member | Meaning |
 |---|---|
-| status | verified, needsReview, failed or incomplete |
-| issues | The reasons the scan cannot be fully trusted |
-| warnings | English detail for your logs, such as which value disagrees with the MRZ |
-| images | The captured pages, each with its side, file and bytes |
-| mrz | The MRZ with a result for every check digit (ID card and passport) |
-| fields and toJson | The raw field map, and everything as JSON (image paths, not image content) |
-| diagnostics | Debug data such as raw OCR text and timing. Not a stable API. |
-| dispose | Deletes the temporary image files that idlens created |
+| `status` | `verified`, `needsReview`, `failed` or `incomplete` |
+| `issues` | The reasons the scan cannot be fully trusted (`ScanIssue`) |
+| `warnings` | English detail for your logs, such as which value disagrees with the MRZ |
+| `images` | The captured pages (`ScannedImage`: `side`, `file`, `bytes()`). `imageFor(side)` finds one. |
+| `mrz` | The MRZ with a result for every check digit in `checks` (ID card and passport) |
+| `fields` / `toJson()` | The raw field map, and everything as JSON (image paths, not image content) |
+| `diagnostics` | Debug data such as raw OCR text and timing. Not a stable API. |
+| `dispose()` | Deletes the temporary image files that idlens created |
 
 **You get a result whenever at least one image was captured.** A scan returns
-null only when the user leaves before capturing anything, and a ScanException is
-thrown only when no image could be captured. Problems with reading are never
-exceptions. They appear as the status and the issues, and the images are still
-there to upload.
+`null` only when the user leaves before capturing anything, and a
+`ScanException` is thrown only when no image could be captured. Problems with
+reading are never exceptions. They appear as `status` and `issues`, and the
+images are still there to upload.
 
 ### Fields
 
-Every field is optional: a value that could not be read is null. Dates are real
-DateTime values. When a value appears in both the MRZ and the printed text, the
-MRZ value is used if its own check digit passed, and a printed value that
-disagrees is reported in the warnings.
+Every field is nullable: a value that could not be read is `null`. Dates are
+real `DateTime` values. When a value appears in both the MRZ and the printed
+text, the MRZ value is used if its own check digit passed, and a printed value
+that disagrees is reported in `warnings`.
 
-**ID card and passport:** documentNumber, nationalNumber, arabicName,
-englishName, surname, givenNames, dateOfBirth, sex, nationality,
-issuingCountry, issueDate, expiryDate, placeOfBirth, placeOfIssue, and
-isExpired (true, false, or null when there is no expiry date).
+**`IdCardResult` and `PassportResult`:** `documentNumber`, `nationalNumber`,
+`arabicName`, `englishName`, `surname`, `givenNames`, `dateOfBirth`, `sex`,
+`nationality`, `issuingCountry`, `issueDate`, `expiryDate`, `placeOfBirth`,
+`placeOfIssue`, and `isExpired` (`true`, `false`, or `null` when there is no
+expiry date).
 
-- The ID card adds profession, address, bloodType and phone.
-- The passport adds nationalityText, nationalityTextArabic,
-  issuingCountryName, placeOfBirthArabic and placeOfIssueArabic.
+- `IdCardResult` adds `profession`, `address`, `bloodType` and `phone`.
+- `PassportResult` adds `nationalityText`, `nationalityTextArabic`,
+  `issuingCountryName`, `placeOfBirthArabic` and `placeOfIssueArabic`.
 
-**Civil registry certificate:** registryOffice, issueDate, nationalNumber, name,
-placeOfBirth, dateOfBirth, maritalStatus, gender, nationalityType, profession,
-workAddress, motherName, and a confidence value from 0 to 1 for each field.
+**`CivilRegistryResult`:** `registryOffice`, `issueDate`, `nationalNumber`,
+`name`, `placeOfBirth`, `dateOfBirth`, `maritalStatus`, `gender`,
+`nationalityType`, `profession`, `workAddress`, `motherName`, and `confidence`
+(0 to 1 for each field).
 
-### Status
+### `ScanStatus`
 
-| Status | Meaning |
+| Value | Meaning |
 |---|---|
-| verified | No issues or warnings. For ID cards and passports, every MRZ check digit passed. |
-| needsReview | Fields were read, but something is off: a blurry photo, a failed check digit, or a printed value that disagrees with the MRZ. |
-| failed | Wrong document, document not in the frame, no MRZ found, or a processing error. The images are still returned. |
-| incomplete | The user left before every page was captured. Nothing was read. |
+| `verified` | No issues or warnings. For ID cards and passports, every MRZ check digit passed. |
+| `needsReview` | Fields were read, but something is off: a blurry photo, a failed check digit, or a printed value that disagrees with the MRZ. |
+| `failed` | Wrong document, document not in the frame, no MRZ found, or a processing error. The images are still returned. |
+| `incomplete` | The user left before every page was captured. Nothing was read. |
 
-A civil registry certificate has no MRZ, so for it verified only means the photo
-was good and every expected field was read.
+A civil registry certificate has no MRZ, so for it `verified` only means the
+photo was good and every expected field was read.
 
-### Issues
+### `ScanIssue`
 
-| Issue | Meaning |
+| Value | Meaning |
 |---|---|
-| mrzNotFound | No MRZ could be read. |
-| wrongDocument | An MRZ of a different document type was found. |
-| documentNotInFrame | The document is missing, too far away or cut off. |
-| imageNotClear | The photo is too dark, blurry or has glare. |
-| mrzCheckDigitsFailed | The MRZ was read, but a check digit failed. The mrz member says which. |
-| processingFailed | An unexpected error while reading. The images are still returned. |
+| `mrzNotFound` | No MRZ could be read. |
+| `wrongDocument` | An MRZ of a different document type was found. |
+| `documentNotInFrame` | The document is missing, too far away or cut off. |
+| `imageNotClear` | The photo is too dark, blurry or has glare. |
+| `mrzCheckDigitsFailed` | The MRZ was read, but a check digit failed. `mrz.checks` says which. |
+| `processingFailed` | An unexpected error while reading. The images are still returned. |
 
-### Exceptions
+### `ScanException`
 
-| Reason | When |
+```dart
+try {
+  final result = await const IdLens().scanPassport(context);
+} on ScanException catch (e) {
+  print(e.reason); // ScanFailureReason.permissionDenied, ...
+}
+```
+
+| `reason` | When |
 |---|---|
-| permissionDenied | The user did not allow camera access and nothing was captured. |
-| cameraUnavailable | There is no usable camera, or it failed to start, and nothing was captured. |
-| missingSetup | iOS only: NSCameraUsageDescription is missing from Info.plist. |
-| imageUnreadable | A file passed to a process method does not exist. |
+| `permissionDenied` | The user did not allow camera access and nothing was captured. |
+| `cameraUnavailable` | There is no usable camera, or it failed to start, and nothing was captured. |
+| `missingSetup` | iOS only: `NSCameraUsageDescription` is missing from `Info.plist`. |
+| `imageUnreadable` | A file passed to a `process...` method does not exist. |
 
 ## Accuracy
 
