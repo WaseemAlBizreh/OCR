@@ -11,6 +11,7 @@ import 'package:mrz/features/identity_scan/data/ocr/paddle/civil_registry/civil_
 import 'package:mrz/features/identity_scan/data/ocr/paddle/passport/paddle_passport_scan_service.dart';
 import 'package:mrz/features/identity_scan/data/ocr/paddle/paddle_sudan_card_parser.dart';
 import 'package:mrz/features/identity_scan/domain/document_kind.dart';
+import 'package:mrz/features/identity_scan/domain/mrz_validator.dart';
 import 'package:mrz/features/identity_scan/presentation/widgets/card_camera_page.dart';
 import 'package:mrz/features/identity_scan/presentation/widgets/json_result_sheet.dart';
 import 'package:permission_handler/permission_handler.dart';
@@ -132,7 +133,17 @@ class _IdentityFlowPageState extends State<IdentityFlowPage> {
                 parseBack: _paddleParser.parseBack,
                 includeRawText: true,
               );
-        resultJson = result.toJson();
+        final validation = const MrzValidator().validate(result.mrz);
+        if (!validation.isAcceptable) {
+          stopwatch.stop();
+          if (!mounted) return;
+          setState(() => _busyLabel = null);
+          if (!await _confirmShowRejected(validation)) return;
+        }
+        resultJson = {
+          ...result.toJson(),
+          'mrzValidation': [for (final i in validation.issues) i.toJson()],
+        };
       }
       stopwatch.stop();
       if (!mounted) return;
@@ -158,6 +169,29 @@ class _IdentityFlowPageState extends State<IdentityFlowPage> {
         _toast('Scan failed: $e');
       }
     }
+  }
+
+  /// Tells the user the MRZ is missing or unreliable. Returns true when they
+  /// choose to look at the result anyway.
+  Future<bool> _confirmShowRejected(MrzValidation validation) async {
+    final show = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('MRZ not readable'),
+        content: Text(validation.userMessage ?? ''),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Show result anyway'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Retake'),
+          ),
+        ],
+      ),
+    );
+    return show ?? false;
   }
 
   void _toast(String message) {
