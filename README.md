@@ -1,237 +1,262 @@
 # idlens
 
-On-device identity document scanner for Flutter. Capture and read **Sudan ID
-cards**, **passports from any country** and **civil registry certificates**,
-validate the MRZ check digits, and get back a typed result **together with the
-document images**, ready to upload.
+[![pub package](https://img.shields.io/pub/v/idlens.svg)](https://pub.dev/packages/idlens)
+[![license: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+![platforms](https://img.shields.io/badge/platforms-Android%20%7C%20iOS-lightgrey)
 
-Everything runs on the phone (PaddleOCR on ONNX Runtime, ML Kit and OpenCV).
-**Nothing is sent to any server.**
+**Scan identity documents on the phone, with no server.** idlens captures and
+reads Sudan ID cards, passports from any country and civil registry
+certificates. It checks the MRZ, returns the data as typed fields, and always
+gives you the document photos back, ready to upload.
 
-## Features
+Everything runs on the device. No image or text ever leaves the phone.
 
-- Three scans: ID card, passport and civil registry certificate.
-- Two ways to use each: our camera pages, or your own camera / gallery by
-  passing image files.
-- Always get the images back, even when reading fails: ignore the `issues` and
-  upload the pictures if that is what your app needs.
-- MRZ read with ICAO 9303 check-digit validation and automatic repair of
-  look-alike characters (`O`/`0`, `I`/`1`, `S`/`5`, `B`/`8`).
-- Typed fields (real `DateTime`s, nullable when not read) and `toJson()`.
+## Highlights
 
-## Install
+- **Three documents:** Sudan ID card (front and back), passport data page (any
+  country) and civil registry certificate (A4).
+- **Two ways to use it:** open the built-in camera screens, or pass in photos
+  you already have from your own camera, the gallery or a server.
+- **Images always returned:** even when reading fails, you get the pictures, so
+  your app can still upload them for manual review.
+- **Trustworthy MRZ:** ICAO 9303 check digits are validated, and look-alike
+  characters (O and 0, I and 1, S and 5, B and 8) are repaired automatically.
+- **Clear results:** typed fields with real dates, a simple status, and a list
+  of reasons when something looks wrong.
+- **Helpful camera flow:** photo tips, front and back capture, a preview with
+  retake, and a warning when a photo is blurry, dark or cut off.
+- **Private by design:** OCR runs on the device with PaddleOCR, ML Kit and
+  OpenCV. No network calls.
+
+## Installation
+
+Add the package to your app and fetch it:
+
+```
+flutter pub add idlens
+flutter pub get
+```
+
+Or add it to pubspec.yaml yourself and run flutter pub get:
 
 ```yaml
 dependencies:
-  idlens:
-    git:
-      url: https://github.com/WaseemAlBizreh/OCR.git
-      ref: v0.1.0
+  idlens: ^0.1.0
 ```
 
-Once published on pub.dev: `flutter pub add idlens`.
+Then import it:
 
-### Platform setup
+```dart
+import 'package:idlens/idlens.dart';
+```
 
-**Android**: nothing to add.
+## Platform setup
 
-**iOS**: add a usage description to `ios/Runner/Info.plist`. This is the only
-required setup step: Apple reads this key from the app's own `Info.plist`, so a
-package cannot supply it.
+### Android
+
+Nothing to add.
+
+### iOS
+
+Add a camera description to ios/Runner/Info.plist. This is the only required
+step. Apple reads this key from your app, so a package cannot add it for you.
 
 ```xml
 <key>NSCameraUsageDescription</key>
 <string>The camera is used to scan identity documents.</string>
 ```
 
-If it is missing, the three `scan...` methods throw a `ScanException` with
-`reason: missingSetup` that names the key, instead of the app being closed by iOS
-when the camera opens.
+If the key is missing, the scan methods throw a ScanException with the reason
+missingSetup that names the key, instead of iOS closing your app when the camera
+opens.
 
-**Build machine: CMake**: OpenCV is compiled from source when your app is
-built, which needs CMake. Android builds use the CMake from the Android SDK.
-**iOS builds need CMake installed on the Mac** (`brew install cmake`); without it
-the build stops with `Failed to find cmake version: latest`.
+### Build requirements
 
-**App size**: idlens uses only the `core`, `imgproc` and `imgcodecs` parts of
-OpenCV, which is what `opencv_dart` builds by default, so nothing needs to be
-configured in your app and the large OpenCV modules (`dnn`, `video`, `calib3d`,
-...) are never compiled in. The bundled OCR models add about 12 MB.
+- **CMake:** OpenCV is compiled when your app is built. Android uses the CMake
+  from the Android SDK. For iOS builds, install CMake on your Mac
+  (brew install cmake). Without it the build stops with "Failed to find cmake
+  version: latest".
+- **App size:** idlens uses only the core, imgproc and imgcodecs parts of
+  OpenCV, so the large modules are never compiled in. The bundled OCR models add
+  about 12 MB.
+- **Devices:** the example builds for iOS 16.0 and the Flutter default Android
+  minimum. The iOS simulator on Apple Silicon may not run ML Kit, so test on a
+  real device.
 
-The example app builds with iOS 16.0 and the Flutter default Android `minSdk`.
-The iOS simulator on Apple Silicon may not run ML Kit; test on a real device.
+## How it works
 
-## Example
+Everything starts from one stateless class, **IdLens**. It has six methods: for
+each document, one that opens the built-in screens, and one that reads image
+files you already have.
 
-[`example/lib/main.dart`](example/lib/main.dart) is a complete app that calls
-every API below, with the options as switches and the result shown as JSON.
-Read it for the code; this page explains what each API does.
+| Document | Built-in screens | From image files | Result |
+|---|---|---|---|
+| Sudan ID card | scanIdCard | processIdCard | IdCardResult |
+| Passport, any country | scanPassport | processPassport | PassportResult |
+| Civil registry certificate | scanCivilRegistry | processCivilRegistry | CivilRegistryResult |
+
+A complete working app that uses every method is in the
+[example](example/lib/main.dart) folder. It has switches for each option and
+shows the result as JSON.
 
 ## The APIs
 
-Everything starts from `IdLens`, a stateless class (`const IdLens()`). There are
-six methods: for each document, one that **opens our screens** (`scan...`) and
-one that **reads files you already have** (`process...`).
+### scanIdCard
 
-| Document | With our screens | From files, no UI | Result type |
-|---|---|---|---|
-| Sudan ID card | `scanIdCard` | `processIdCard` | `IdCardResult` |
-| Passport (any country) | `scanPassport` | `processPassport` | `PassportResult` |
-| Civil registry certificate (A4) | `scanCivilRegistry` | `processCivilRegistry` | `CivilRegistryResult` |
+Opens the full capture flow on your app's navigator: an optional page of photo
+tips, the camera for the front, the camera for the back, a preview where the
+user can retake either side, and then the scan. The back of the card holds the
+MRZ.
 
-### `scanIdCard(BuildContext context, {IdCardScanOptions options})`
+- **Takes:** a BuildContext and optional IdCardScanOptions.
+- **Returns:** an IdCardResult, or null only if the user leaves before
+  capturing anything.
+- **Throws:** a ScanException only when no image could be captured, for
+  example camera permission denied, a camera failure, or the iOS setup missing.
+- If the user goes back after capturing some pages, you get a result with the
+  status incomplete that holds those images.
+- A blurry, dark or cut-off photo is shown to the user before reading, and they
+  can retake it or choose Use anyway.
 
-Opens the full capture flow on your app's `Navigator`: an optional page of photo
-tips, the camera for the **front**, the camera for the **back**, a preview where
-the user can retake either side, then the scan. The back holds the MRZ.
+### scanPassport
 
-- **Returns** `Future<IdCardResult?>`: `null` only if the user leaves before
-  capturing anything. Otherwise a result, whatever its `status`.
-- **Throws** `ScanException` only when no image could be captured: camera
-  permission denied, camera failure, or the iOS usage description missing.
-- If the user presses back after capturing some pages, you get an `incomplete`
-  result holding those images.
-- Before reading, a blurry, dark or cut-off photo is reported to the user, who
-  can retake or **Use anyway**.
+The same flow for a single page: the data page with the photo and the two MRZ
+lines. It works for passports from any country. Returns a PassportResult, or
+null if the user leaves before capturing, and throws like scanIdCard.
 
-### `scanPassport(BuildContext context, {PassportScanOptions options})`
+### scanCivilRegistry
 
-The same flow for one page: the **data page** (the page with the photo and the
-two MRZ lines). Works for passports from any country. Returns
-`Future<PassportResult?>` and throws like `scanIdCard`.
+The same flow for one A4 certificate page. The camera straightens the page into
+a flat sheet when it can find the four corners. This document has no MRZ.
+Returns a CivilRegistryResult, or null if the user leaves before capturing, and
+throws like scanIdCard.
 
-### `scanCivilRegistry(BuildContext context, {CivilRegistryScanOptions options})`
+### processIdCard
 
-The same flow for one **A4 certificate page**. The camera straightens the page
-to a flat sheet when it can find its four corners. There is no MRZ on this
-document. Returns `Future<CivilRegistryResult?>` and throws like `scanIdCard`.
+Reads two photos you already have, the front and the back. There are no screens,
+no camera and no BuildContext, so it suits your own camera, a gallery picker or
+images that came from a server.
 
-### `processIdCard({required File front, required File back, IdCardScanOptions options})`
+- **Takes:** the front file, the back file and optional IdCardScanOptions.
+- **Returns:** an IdCardResult. Never null.
+- **Throws:** a ScanException with the reason imageUnreadable if a file does
+  not exist. Every other problem is reported on the result.
+- Your files are used as given and are never deleted by dispose.
+- For the best result, crop the card to fill the image, with the MRZ sharp and
+  fully visible.
 
-Reads two photos you already have: no screens, no camera, no `BuildContext`. Use
-it with your own camera, a gallery picker, or images that came from a server.
+### processPassport
 
-- **Returns** `Future<IdCardResult>`, never null.
-- **Throws** `ScanException` with `reason: imageUnreadable` if a file does not
-  exist. Every other problem is reported on the result.
-- Your files are used as given and are **never deleted** by `dispose()`.
-- Photo quality advice still applies: the cropped card should fill the image,
-  with the MRZ sharp and fully visible.
+Same as processIdCard, for the passport data page. Takes the data page file and
+returns a PassportResult.
 
-### `processPassport({required File dataPage, PassportScanOptions options})`
+### processCivilRegistry
 
-Same as `processIdCard`, for the passport data page. Returns
-`Future<PassportResult>`.
+Same as processIdCard, for the certificate page. Takes the page file and returns
+a CivilRegistryResult.
 
-### `processCivilRegistry({required File page, CivilRegistryScanOptions options})`
+## Options
 
-Same as `processIdCard`, for the certificate page. Returns
-`Future<CivilRegistryResult>`.
+Each method takes an optional options object: IdCardScanOptions,
+PassportScanOptions or CivilRegistryScanOptions.
 
-### Options
-
-Each method takes an options object (`IdCardScanOptions`, `PassportScanOptions`,
-`CivilRegistryScanOptions`), all const and all optional.
-
-| Option | Default | Effect |
+| Option | Default | What it does |
 |---|---|---|
-| `showTips` | `true` | Show the page of photo tips before the camera. When `false` the camera opens straight away. `scan...` only. |
-| `requireValidMrz` | `false` | The flow only offers **Retake** while the MRZ is missing or its check digits fail. When `false` the user can continue anyway and you decide what to do with the `issues`. `scan...` only; not available on the certificate, which has no MRZ. |
+| showTips | true | Shows the page of photo tips before the camera. When false, the camera opens straight away. Only for the scan methods. |
+| requireValidMrz | false | While the MRZ is missing or its check digits fail, the user can only retake. When false, the user can continue and you decide what to do with the issues. Only for the scan methods, and not available for the certificate, which has no MRZ. |
 
 ## Results
 
-`IdCardResult`, `PassportResult` and `CivilRegistryResult` all extend
-`ScanOutcome`, so the same members work on every result.
+IdCardResult, PassportResult and CivilRegistryResult all extend **ScanOutcome**,
+so the same members are on every result.
 
 | Member | Meaning |
 |---|---|
-| `status` | `verified`, `needsReview`, `failed` or `incomplete` |
-| `issues` | Typed reasons the scan cannot be fully trusted (`ScanIssue`) |
-| `warnings` | English detail for logs, such as which value disagrees with the MRZ |
-| `images` | The captured pages (`ScannedImage`: `side`, `file`, `bytes()`); `imageFor(side)` finds one |
-| `mrz` | The MRZ with per-field `checks` (ID card and passport) |
-| `fields` / `toJson()` | The raw field map / everything as JSON (image paths, not image content) |
-| `diagnostics` | Debug data such as raw OCR text and timing; not a stable API |
-| `dispose()` | Deletes the temporary image files idlens created |
+| status | verified, needsReview, failed or incomplete |
+| issues | The reasons the scan cannot be fully trusted |
+| warnings | English detail for your logs, such as which value disagrees with the MRZ |
+| images | The captured pages, each with its side, file and bytes |
+| mrz | The MRZ with a result for every check digit (ID card and passport) |
+| fields and toJson | The raw field map, and everything as JSON (image paths, not image content) |
+| diagnostics | Debug data such as raw OCR text and timing. Not a stable API. |
+| dispose | Deletes the temporary image files that idlens created |
 
-**A result is returned whenever at least one image was captured.** `null` is
-returned only when the user leaves before capturing anything, and
-`ScanException` is thrown only when no image could be captured (camera
-permission denied, camera failure, missing iOS setup, or a file passed to
-`process...` that does not exist). Read problems are never exceptions: they show
-up as `status` and `issues`, and the images are still there to upload.
+**You get a result whenever at least one image was captured.** A scan returns
+null only when the user leaves before capturing anything, and a ScanException is
+thrown only when no image could be captured. Problems with reading are never
+exceptions. They appear as the status and the issues, and the images are still
+there to upload.
 
 ### Fields
 
-All fields are nullable: a value that could not be read is `null`. Dates are
-`DateTime`s. Where a value exists in both the MRZ and the printed text, the MRZ
-value is used when its own check digit passed, and a printed value that
-disagrees is reported in `warnings`.
+Every field is optional: a value that could not be read is null. Dates are real
+DateTime values. When a value appears in both the MRZ and the printed text, the
+MRZ value is used if its own check digit passed, and a printed value that
+disagrees is reported in the warnings.
 
-**`IdCardResult`** and **`PassportResult`** (both extend `IdentityDocumentResult`):
-`documentNumber`, `nationalNumber`, `arabicName`, `englishName`, `surname`,
-`givenNames`, `dateOfBirth`, `sex`, `nationality`, `issuingCountry`, `issueDate`,
-`expiryDate`, `placeOfBirth`, `placeOfIssue`, and `isExpired` (true, false, or
-null when there is no expiry date).
+**ID card and passport:** documentNumber, nationalNumber, arabicName,
+englishName, surname, givenNames, dateOfBirth, sex, nationality,
+issuingCountry, issueDate, expiryDate, placeOfBirth, placeOfIssue, and
+isExpired (true, false, or null when there is no expiry date).
 
-- `IdCardResult` adds `profession`, `address`, `bloodType`, `phone`.
-- `PassportResult` adds `nationalityText`, `nationalityTextArabic`,
-  `issuingCountryName`, `placeOfBirthArabic`, `placeOfIssueArabic`.
+- The ID card adds profession, address, bloodType and phone.
+- The passport adds nationalityText, nationalityTextArabic,
+  issuingCountryName, placeOfBirthArabic and placeOfIssueArabic.
 
-**`CivilRegistryResult`**: `registryOffice`, `issueDate`, `nationalNumber`,
-`name`, `placeOfBirth`, `dateOfBirth`, `maritalStatus`, `gender`,
-`nationalityType`, `profession`, `workAddress`, `motherName`, and `confidence`
-(0 to 1 per field).
+**Civil registry certificate:** registryOffice, issueDate, nationalNumber, name,
+placeOfBirth, dateOfBirth, maritalStatus, gender, nationalityType, profession,
+workAddress, motherName, and a confidence value from 0 to 1 for each field.
 
-### `ScanStatus`
+### Status
 
-| Value | Meaning |
+| Status | Meaning |
 |---|---|
-| `verified` | No issues or warnings; for ID cards and passports all MRZ check digits passed. |
-| `needsReview` | Fields were read but something is off (blurry photo, failed check digit, printed value disagreeing with the MRZ). |
-| `failed` | Wrong document, not in the frame, no MRZ found, or a processing error. Images are still returned. |
-| `incomplete` | The user left before every page was captured; nothing was read. |
+| verified | No issues or warnings. For ID cards and passports, every MRZ check digit passed. |
+| needsReview | Fields were read, but something is off: a blurry photo, a failed check digit, or a printed value that disagrees with the MRZ. |
+| failed | Wrong document, document not in the frame, no MRZ found, or a processing error. The images are still returned. |
+| incomplete | The user left before every page was captured. Nothing was read. |
 
-A civil registry certificate has no MRZ: for it `verified` only means the photo
-was fine and every expected field was read.
+A civil registry certificate has no MRZ, so for it verified only means the photo
+was good and every expected field was read.
 
-### `ScanIssue`
+### Issues
 
-| Value | Meaning |
+| Issue | Meaning |
 |---|---|
-| `mrzNotFound` | No MRZ could be read. |
-| `wrongDocument` | An MRZ of another document type was found. |
-| `documentNotInFrame` | The document is missing, too far, or cut off. |
-| `imageNotClear` | Too dark, blurry or glare. |
-| `mrzCheckDigitsFailed` | MRZ read, but a check digit failed (`mrz.checks` says which). |
-| `processingFailed` | An unexpected error while reading; images are still returned. |
+| mrzNotFound | No MRZ could be read. |
+| wrongDocument | An MRZ of a different document type was found. |
+| documentNotInFrame | The document is missing, too far away or cut off. |
+| imageNotClear | The photo is too dark, blurry or has glare. |
+| mrzCheckDigitsFailed | The MRZ was read, but a check digit failed. The mrz member says which. |
+| processingFailed | An unexpected error while reading. The images are still returned. |
 
-### `ScanException`
+### Exceptions
 
-| `reason` | When |
+| Reason | When |
 |---|---|
-| `permissionDenied` | The user did not allow camera access and nothing was captured. |
-| `cameraUnavailable` | No usable camera, or it failed to start, and nothing was captured. |
-| `missingSetup` | iOS only: `NSCameraUsageDescription` is missing from `Info.plist`. |
-| `imageUnreadable` | A file passed to a `process...` method does not exist. |
+| permissionDenied | The user did not allow camera access and nothing was captured. |
+| cameraUnavailable | There is no usable camera, or it failed to start, and nothing was captured. |
+| missingSetup | iOS only: NSCameraUsageDescription is missing from Info.plist. |
+| imageUnreadable | A file passed to a process method does not exist. |
 
 ## Accuracy
 
-Accuracy has so far been checked on very few real documents. Test with your own
-before relying on the results, and treat `status != verified` as a prompt to
-review.
+Accuracy has so far been checked on only a small number of real documents. Test
+with your own documents before relying on the results, and treat any status
+other than verified as a prompt for review.
 
 ## Privacy and licenses
 
-All processing is on-device and idlens makes no network calls. It stores the
-photos only in the app's temporary folder until you call `dispose()` or the OS
+All processing is on the device and idlens makes no network calls. Photos are
+kept only in the app's temporary folder until you call dispose or the system
 clears it.
 
-idlens is MIT licensed. The bundled OCR models are PaddleOCR weights
-(Apache-2.0) converted to ONNX; their sources and hashes are in
-`assets/models/paddle/README.md`. ML Kit and OpenCV carry their own licenses.
+idlens is released under the MIT license. The bundled OCR models are PaddleOCR
+weights (Apache-2.0) converted to ONNX. Their sources and hashes are listed in
+assets/models/paddle/README.md. ML Kit and OpenCV have their own licenses.
 
 ## More
 
 - [How it works](doc/how_it_works.md)
 - [Changelog](CHANGELOG.md)
+- [Report an issue](https://github.com/WaseemAlBizreh/OCR/issues)
