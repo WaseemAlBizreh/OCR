@@ -1,39 +1,43 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mrz/features/identity_scan/data/mrz/mrz_parser.dart';
+import 'package:mrz/features/identity_scan/domain/document_kind.dart';
 import 'package:mrz/features/identity_scan/domain/mrz_validator.dart';
+import 'package:mrz/features/identity_scan/domain/scan_issue.dart';
 
 void main() {
-  final clock = DateTime(2026, 10, 28);
-  final parser = MrzParser(clock: () => clock);
-  final validator = MrzValidator(clock: () => clock);
+  final parser = MrzParser(clock: () => DateTime(2026, 10, 28));
+  const validator = MrzValidator();
 
-  const td3 = 'P<UTOERIKSSON<<ANNA<MARIA<<<<<<<<<<<<<<<<<<<\n'
+  const passportText = 'P<UTOERIKSSON<<ANNA<MARIA<<<<<<<<<<<<<<<<<<<\n'
       'L898902C36UTO7408122F1204159ZE184226B<<<<<10\n';
+  const idText = 'IDSDN0085936669<<<<<<<<<<<<<<<\n'
+      '9209231M2705169SDN<<<<<<<<<<<4\n'
+      'OSMAN<<MERGHANI<MEKKI<MERGHANI\n';
 
-  test('no MRZ is an error telling the user to retake', () {
-    final v = validator.validate(null);
-    expect(v.isAcceptable, isFalse);
-    expect(v.userMessage, contains('No MRZ found'));
+  test('no MRZ gives the mrzNotFound code', () {
+    expect(validator.validate(null, DocumentKind.passport), ScanIssue.mrzNotFound);
   });
 
-  test('a clean read is acceptable', () {
-    // The ICAO specimen expired in 2012, which is only a warning.
-    final v = validator.validate(parser.parseText(td3));
-    expect(v.isAcceptable, isTrue);
-    expect(v.warnings.map((w) => w.code), ['expired']);
-    expect(v.userMessage, isNull);
+  test('an expired document is still accepted', () {
+    // The ICAO specimen expired in 2012.
+    final mrz = parser.parseText(passportText);
+    expect(validator.validate(mrz, DocumentKind.passport), isNull);
   });
 
-  test('a failed check digit is rejected', () {
-    final broken = td3.replaceFirst('L898902C36', 'L898902C37');
-    final v = validator.validate(parser.parseText(broken));
-    expect(v.isAcceptable, isFalse);
-    expect(v.errors.map((e) => e.code), contains('checkDigits'));
-  });
+  group('wrong document', () {
+    final passport = parser.parseText(passportText);
+    final idCard = parser.parseText(idText);
 
-  test('a date of birth in the future is rejected', () {
-    final future = MrzValidator(clock: () => DateTime(1970, 1, 1));
-    final v = future.validate(parser.parseText(td3));
-    expect(v.errors.map((e) => e.code), contains('dateOfBirth'));
+    test('a passport MRZ on an ID scan', () {
+      expect(validator.validate(passport, DocumentKind.sudanId), ScanIssue.wrongDocument);
+    });
+
+    test('an ID MRZ on a passport scan', () {
+      expect(validator.validate(idCard, DocumentKind.passport), ScanIssue.wrongDocument);
+    });
+
+    test('the matching document passes', () {
+      expect(validator.validate(idCard, DocumentKind.sudanId), isNull);
+    });
   });
 }

@@ -29,11 +29,9 @@ class MrzReader {
   final ImageOps _imageOps;
 
   Future<MrzReadResult> read(String imagePath, DocumentKind kind) async {
-    final formats = switch (kind) {
-      DocumentKind.sudanId => [MrzFormat.td1],
-      DocumentKind.passport => [MrzFormat.td3],
-      DocumentKind.civilRegistryCertificate => <MrzFormat>[], // has no MRZ
-    };
+    // Both formats are accepted so a wrong document (a passport shown for an
+    // ID scan) is recognised as such by MrzValidator, not reported as missing.
+    final formats = kind.hasMrz ? MrzFormat.values : <MrzFormat>[];
     final attempts = <Map<String, dynamic>>[];
     MrzData? best;
 

@@ -87,6 +87,16 @@ class PaddlePassportParser {
         arabic ??= _arabicValue(source.text);
         if (latin != null && arabic != null) break;
       }
+      // Paddle may read only the Arabic half of a bilingual value while ML Kit
+      // reads the Latin half on the same row; that reading is kept as an
+      // alternative of the Arabic line, so take the Latin name from it.
+      if (latin == null) {
+        for (final source in sources(field)) {
+          for (final alt in source.alts) {
+            latin ??= _latinValue(alt);
+          }
+        }
+      }
       return (latin: latin, arabic: arabic);
     }
 

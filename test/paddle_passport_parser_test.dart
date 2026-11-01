@@ -232,4 +232,16 @@ void main() {
       expect(fields['issueDate'], '2023/10/13');
     });
   });
+
+  test('place of birth: Latin name taken from the other engine when Paddle read only the Arabic', () {
+    final lines = [
+      at('Place of Birth', 0, 220),
+      at('امدرمان', 330, 220, 150, ['OMDURMAN/ le yael']),
+      at('مكان الميلاد', 500, 220),
+      ...sudan.lines,
+    ];
+    final fields = parser.parse(lines, mrz: sudan.mrz).fields;
+    expect(fields['placeOfBirthArabic'], 'امدرمان');
+    expect(fields['placeOfBirth'], 'OMDURMAN');
+  });
 }

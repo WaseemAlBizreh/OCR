@@ -13,7 +13,11 @@ import 'package:get_it/get_it.dart' as _i174;
 import 'package:injectable/injectable.dart' as _i526;
 
 import '../../features/identity_scan/data/identity_scan_service.dart' as _i201;
+import '../../features/identity_scan/data/image/frame_edge_checker.dart'
+    as _i1001;
 import '../../features/identity_scan/data/image/image_ops.dart' as _i507;
+import '../../features/identity_scan/data/image/image_quality_checker.dart'
+    as _i856;
 import '../../features/identity_scan/data/mrz/mrz_reader.dart' as _i537;
 import '../../features/identity_scan/data/ocr/ocr_engine.dart' as _i77;
 import '../../features/identity_scan/data/ocr/paddle/civil_registry/civil_registry_scan_service.dart'
@@ -54,11 +58,17 @@ _i174.GetIt $initGetIt(
       gh<_i487.MlKitLatinReader>(),
     ),
   );
+  gh.lazySingleton<_i856.ImageQualityChecker>(
+    () => _i856.ImageQualityChecker(gh<_i507.ImageOps>()),
+  );
   gh.lazySingleton<_i338.CivilRegistryScanService>(
     () => _i338.CivilRegistryScanService(
       gh<_i71.CivilRegistryTextReader>(),
       gh<_i507.ImageOps>(),
     ),
+  );
+  gh.lazySingleton<_i1001.FrameEdgeChecker>(
+    () => _i1001.FrameEdgeChecker(gh<_i487.MlKitLatinReader>()),
   );
   gh.lazySingleton<_i235.PaddlePassportMrzReader>(
     () => _i235.PaddlePassportMrzReader(

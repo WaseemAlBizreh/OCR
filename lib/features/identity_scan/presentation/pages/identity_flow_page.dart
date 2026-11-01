@@ -4,6 +4,8 @@ import 'package:auto_route/auto_route.dart';
 import 'package:flutter/material.dart';
 import 'package:mrz/core/config/injection.dart';
 import 'package:mrz/features/identity_scan/data/identity_scan_service.dart';
+import 'package:mrz/features/identity_scan/data/image/frame_edge_checker.dart';
+import 'package:mrz/features/identity_scan/data/image/image_quality_checker.dart';
 import 'package:mrz/features/identity_scan/data/ocr/ocr_engine.dart';
 import 'package:mrz/features/identity_scan/data/ocr/paddle/paddle_latin_hybrid_recognizer.dart';
 import 'package:mrz/features/identity_scan/data/ocr/paddle/paddle_ocr_engine.dart';
@@ -11,7 +13,10 @@ import 'package:mrz/features/identity_scan/data/ocr/paddle/civil_registry/civil_
 import 'package:mrz/features/identity_scan/data/ocr/paddle/passport/paddle_passport_scan_service.dart';
 import 'package:mrz/features/identity_scan/data/ocr/paddle/paddle_sudan_card_parser.dart';
 import 'package:mrz/features/identity_scan/domain/document_kind.dart';
+import 'package:mrz/features/identity_scan/domain/image_quality.dart';
 import 'package:mrz/features/identity_scan/domain/mrz_validator.dart';
+import 'package:mrz/features/identity_scan/domain/scan_issue.dart';
+import 'package:mrz/features/identity_scan/presentation/scan_issue_text.dart';
 import 'package:mrz/features/identity_scan/presentation/widgets/card_camera_page.dart';
 import 'package:mrz/features/identity_scan/presentation/widgets/json_result_sheet.dart';
 import 'package:permission_handler/permission_handler.dart';
@@ -113,10 +118,31 @@ class _IdentityFlowPageState extends State<IdentityFlowPage> {
       // goes through the shared service.
       final Map<String, dynamic> resultJson;
       if (widget.kind == DocumentKind.civilRegistryCertificate) {
-        resultJson = (await locator<CivilRegistryScanService>()
-                .scan(_originals[DocumentSide.page]!))
-            .toJson();
+        // Only clarity and framing are checked on this document; they run
+        // first so an unreadable photo is not sent through OCR.
+        final page = _originals[DocumentSide.page]!;
+        final check = await _checkWholeImage(page);
+        if (check.issue != null && !await _rejectedBeforeScan(check.issue!, stopwatch)) {
+          return;
+        }
+        final issue = check.issue;
+        final quality = check.quality;
+        resultJson = {
+          ...(await locator<CivilRegistryScanService>()
+                  .scan(_originals[DocumentSide.page]!))
+              .toJson(),
+          'scanIssue': issue?.name,
+          if (quality != null) 'imageQuality': quality.toJson(),
+        };
       } else {
+        // The ID front has no MRZ: only clarity and framing apply to it.
+        if (widget.kind == DocumentKind.sudanId) {
+          final front = await _checkWholeImage(_originals[DocumentSide.front]!);
+          if (front.issue != null &&
+              !await _rejectedBeforeScan(front.issue!, stopwatch, side: 'Front')) {
+            return;
+          }
+        }
         final result = widget.kind == DocumentKind.passport
             ? await locator<PaddlePassportScanService>()
                 .scan(_originals[DocumentSide.dataPage]!)
@@ -133,16 +159,33 @@ class _IdentityFlowPageState extends State<IdentityFlowPage> {
                 parseBack: _paddleParser.parseBack,
                 includeRawText: true,
               );
-        final validation = const MrzValidator().validate(result.mrz);
-        if (!validation.isAcceptable) {
+        final mrzIssue = const MrzValidator().validate(result.mrz, widget.kind);
+        ImageQuality? quality;
+        if (mrzIssue != ScanIssue.wrongDocument) {
+          // Even a found MRZ can come from a dark or blurry photo whose other
+          // fields are incomplete, so the photo is always measured.
+          final mrzSide = widget.kind == DocumentKind.passport
+              ? DocumentSide.dataPage
+              : DocumentSide.back;
+          quality = await locator<ImageQualityChecker>()
+              .check(_originals[mrzSide]!, widget.kind);
+        }
+        final issue = ScanIssueResolver.resolve(
+          mrzIssue: mrzIssue,
+          recognizedFields: result.recognizedFieldCount,
+          imageIssue: quality?.problem,
+          frameTouchedSides: result.frameTouchedSides ?? 0,
+        );
+        if (issue != null) {
           stopwatch.stop();
           if (!mounted) return;
           setState(() => _busyLabel = null);
-          if (!await _confirmShowRejected(validation)) return;
+          if (!await _confirmShowRejected(issue)) return;
         }
         resultJson = {
           ...result.toJson(),
-          'mrzValidation': [for (final i in validation.issues) i.toJson()],
+          'scanIssue': issue?.name,
+          if (quality != null) 'imageQuality': quality.toJson(),
         };
       }
       stopwatch.stop();
@@ -171,19 +214,51 @@ class _IdentityFlowPageState extends State<IdentityFlowPage> {
     }
   }
 
-  /// Tells the user the MRZ is missing or unreliable. Returns true when they
+  /// Clarity and framing of a whole photo (no MRZ): [ScanIssue.imageNotClear]
+  /// or [ScanIssue.documentNotInFrame], or null when it is fine.
+  Future<({ScanIssue? issue, ImageQuality? quality})> _checkWholeImage(String path) async {
+    final quality = locator<ImageQualityChecker>().checkWhole(path);
+    final touched = await locator<FrameEdgeChecker>().touchedSides(path);
+    final issue = ScanIssueResolver.resolve(
+      mrzIssue: null,
+      recognizedFields: 0,
+      imageIssue: quality?.problem,
+      frameTouchedSides: touched,
+    );
+    return (issue: issue, quality: quality);
+  }
+
+  /// Shows [issue] before OCR runs. Returns true when the scan should go on.
+  Future<bool> _rejectedBeforeScan(
+    ScanIssue issue,
+    Stopwatch stopwatch, {
+    String? side,
+  }) async {
+    stopwatch.stop();
+    if (!mounted) return false;
+    setState(() => _busyLabel = null);
+    if (!await _confirmShowRejected(issue, side: side)) return false;
+    setState(() => _busyLabel = 'Scanning document...');
+    stopwatch
+      ..reset()
+      ..start();
+    return true;
+  }
+
+  /// Tells the user what is wrong with the scan. Returns true when they
   /// choose to look at the result anyway.
-  Future<bool> _confirmShowRejected(MrzValidation validation) async {
+  Future<bool> _confirmShowRejected(ScanIssue issue, {String? side}) async {
     final show = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('MRZ not readable'),
-        content: Text(validation.userMessage ?? ''),
+        title: Text(side == null ? issue.title : '$side: ${issue.title}'),
+        content: Text(issue.message),
         actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, true),
-            child: const Text('Show result anyway'),
-          ),
+          if (issue.canContinue)
+            TextButton(
+              onPressed: () => Navigator.pop(context, true),
+              child: const Text('Show result anyway'),
+            ),
           FilledButton(
             onPressed: () => Navigator.pop(context, false),
             child: const Text('Retake'),

@@ -10,6 +10,7 @@ class IdentityScanResult {
     this.dataPageFields,
     this.mrz,
     this.mrzAttempts = const [],
+    this.frameTouchedSides,
     this.imagePaths = const {},
     this.rawText = const {},
     this.warnings = const [],
@@ -27,6 +28,10 @@ class IdentityScanResult {
   final Map<String, String?>? dataPageFields;
   final MrzData? mrz;
   final List<Map<String, dynamic>> mrzAttempts;
+
+  /// How many edges of the photo printed text runs up to (0 to 4), or null
+  /// when not measured. Two or more means the document is cut off.
+  final int? frameTouchedSides;
   final Map<DocumentSide, String> imagePaths;
 
   /// What OCR read from a passport data page, before parsing. Debug aid for
@@ -34,6 +39,17 @@ class IdentityScanResult {
   final Map<DocumentSide, String> rawText;
   final List<String> warnings;
   final DateTime scannedAt;
+
+  /// How many printed fields (front, back or data page) were read.
+  int get recognizedFieldCount => [
+        frontFields,
+        backFields,
+        dataPageFields,
+      ].fold(
+        0,
+        (count, fields) =>
+            count + (fields?.values.where((v) => v != null && v.isNotEmpty).length ?? 0),
+      );
 
   Map<String, dynamic> toJson() => {
         'documentKind': documentKind.name,
@@ -51,6 +67,7 @@ class IdentityScanResult {
             for (final entry in rawText.entries) entry.key.name: entry.value,
           },
         'mrzAttempts': mrzAttempts,
+        if (frameTouchedSides != null) 'frameTouchedSides': frameTouchedSides,
         'scannedAt': scannedAt.toIso8601String(),
       };
 }

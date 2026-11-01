@@ -29,7 +29,9 @@ class PaddlePassportMrzReader {
   PaddlePassportMrzReader(this._mlkit, this._paddle, this._imageOps);
 
   static const _parser = MrzParser();
-  static const _formats = [MrzFormat.td3];
+  // Either format, so an ID card shown for a passport scan is reported as the
+  // wrong document instead of a missing MRZ.
+  static const _formats = MrzFormat.values;
 
   final MlKitLatinReader _mlkit;
   final PaddleOcrEngine _paddle;

@@ -5,9 +5,12 @@ import 'package:mrz/features/identity_scan/data/ocr/paddle/passport/mlkit_latin_
 import 'package:mrz/features/identity_scan/data/ocr/paddle/passport/paddle_passport_mrz_reader.dart';
 import 'package:mrz/features/identity_scan/data/ocr/paddle/passport/paddle_passport_parser.dart';
 import 'package:mrz/features/identity_scan/data/ocr/paddle/passport/paddle_passport_text_reader.dart';
+import 'package:mrz/features/identity_scan/data/ocr/paddle/passport/passport_line.dart';
+import 'package:mrz/features/identity_scan/data/ocr/paddle/passport/passport_frame_check.dart';
 import 'package:mrz/features/identity_scan/domain/document_kind.dart';
 import 'package:mrz/features/identity_scan/domain/identity_scan_result.dart';
 import 'package:mrz/features/identity_scan/domain/mrz_data.dart';
+import 'package:opencv_dart/opencv.dart' as cv;
 
 /// Reads any passport's data page with ML Kit + Paddle, without Tesseract.
 ///
@@ -43,10 +46,27 @@ class PaddlePassportScanService {
       dataPageFields: printed.fields,
       mrz: mrz,
       mrzAttempts: mrzRead.attempts,
+      frameTouchedSides: _touchedSides(dataPagePath, text.lines),
       imagePaths: {DocumentSide.dataPage: dataPagePath},
       rawText: {DocumentSide.dataPage: text.flat},
       warnings: warnings.toSet().toList(),
     );
+  }
+
+  /// Edges of the photo that printed text runs up to; null when the photo
+  /// cannot be read.
+  static int? _touchedSides(String imagePath, List<PassportLine> lines) {
+    final image = cv.imread(imagePath);
+    try {
+      if (image.isEmpty) return null;
+      return PassportFrameCheck.touchedSides(
+        lines,
+        width: image.cols.toDouble(),
+        height: image.rows.toDouble(),
+      );
+    } finally {
+      image.dispose();
+    }
   }
 
   static List<String> _mrzWarnings(MrzData? mrz) {
