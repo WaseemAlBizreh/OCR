@@ -3,7 +3,7 @@ description: >-
   On-device scanner for Sudan ID cards, passports and civil registry
   certificates. Reads the MRZ, validates its check digits and returns typed
   results with the images.
-version: 0.1.0
+version: 0.1.1
 repository: https://github.com/WaseemAlBizreh/OCR
 issue_tracker: https://github.com/WaseemAlBizreh/OCR/issues
 topics:

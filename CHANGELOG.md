@@ -1,3 +1,10 @@
+## 0.1.1
+
+- Rewrote the README for pub.dev: install with `flutter pub add idlens`, every
+  API with its signature and a usage example, and clearer platform setup.
+- Smaller published package: build output is no longer included.
+- No code changes.
+
 ## 0.1.0
 
 First release.
