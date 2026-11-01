@@ -7,6 +7,7 @@ import 'package:idlens/src/api/passport_result.dart';
 import 'package:idlens/src/api/scan_exception.dart';
 import 'package:idlens/src/api/scan_options.dart';
 import 'package:idlens/src/domain/document_kind.dart';
+import 'package:idlens/src/platform_setup.dart';
 import 'package:idlens/src/presentation/pages/identity_flow_page.dart';
 import 'package:idlens/src/scan_runner.dart';
 
@@ -30,7 +31,8 @@ class IdLens {
   ///
   /// Returns null when the user leaves before capturing anything. Throws
   /// [ScanException] when nothing could be captured because camera access was
-  /// denied or the camera failed. Otherwise returns a result, whatever its
+  /// denied, the camera failed, or the iOS app lacks its camera usage
+  /// description. Otherwise returns a result, whatever its
   /// `status`.
   Future<IdCardResult?> scanIdCard(
     BuildContext context, {
@@ -99,7 +101,15 @@ class IdLens {
     DocumentKind kind,
     ScanOptions options,
   ) async {
-    final exit = await Navigator.of(context).push<ScanFlowExit>(
+    final navigator = Navigator.of(context);
+    if (await PlatformSetup.iosCameraUsageMissing()) {
+      throw const ScanException(
+        ScanFailureReason.missingSetup,
+        'Add NSCameraUsageDescription to ios/Runner/Info.plist: iOS closes an '
+        'app that opens the camera without it.',
+      );
+    }
+    final exit = await navigator.push<ScanFlowExit>(
       MaterialPageRoute(
         fullscreenDialog: true,
         builder: (_) => IdentityFlowPage(kind: kind, options: options),

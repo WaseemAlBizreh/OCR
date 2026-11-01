@@ -6,6 +6,11 @@ enum ScanFailureReason {
   /// No usable camera, or it failed to start, and no image was captured.
   cameraUnavailable,
 
+  /// The host app is missing a setup step idlens cannot do for it: on iOS,
+  /// `NSCameraUsageDescription` in `Info.plist`. The exception message says
+  /// what to add.
+  missingSetup,
+
   /// An image given to a `process*` method is missing or is not a readable
   /// image file.
   imageUnreadable,
