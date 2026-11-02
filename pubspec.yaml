@@ -3,7 +3,7 @@ description: >-
   On-device scanner for Sudan ID cards, passports and civil registry
   certificates. Reads the MRZ, validates its check digits and returns typed
   results with the images.
-version: 0.1.2
+version: 0.1.3
 repository: https://github.com/WaseemAlBizreh/OCR
 issue_tracker: https://github.com/WaseemAlBizreh/OCR/issues
 topics:
@@ -23,7 +23,10 @@ dependencies:
 
   camera: ^0.12.0+2
   flutter_onnxruntime: ^1.9.0
-  google_mlkit_text_recognition: ^0.16.0
+  # Keeps 0.15.x so apps can share google_mlkit_commons 0.11 with other ML Kit
+  # packages, such as google_mlkit_face_detection 0.13. Pub still picks 0.16
+  # when nothing holds it back.
+  google_mlkit_text_recognition: ">=0.15.1 <0.17.0"
   # Pinned to 2.2.x: its default build compiles only core, imgproc and imgcodecs,
   # which is all idlens uses. A later minor could change that default and grow
   # every app that depends on idlens.

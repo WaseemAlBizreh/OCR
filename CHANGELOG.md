@@ -1,3 +1,10 @@
+## 0.1.3
+
+- Allow `google_mlkit_text_recognition` 0.15.1 again, so idlens can be installed
+  alongside packages that need `google_mlkit_commons` 0.11, such as
+  `google_mlkit_face_detection` 0.13.
+- No code changes.
+
 ## 0.1.2
 
 - Updated dependencies: `camera` to `^0.12.0+2` and
