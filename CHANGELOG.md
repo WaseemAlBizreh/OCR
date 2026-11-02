@@ -1,3 +1,10 @@
+## 0.1.2
+
+- Updated dependencies: `camera` to `^0.12.0+2` and
+  `google_mlkit_text_recognition` to `^0.16.0`.
+- Example app: added the Android launcher icon.
+- No API changes.
+
 ## 0.1.1
 
 - Rewrote the README for pub.dev: install with `flutter pub add idlens`, every
