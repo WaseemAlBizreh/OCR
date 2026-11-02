@@ -2,7 +2,7 @@
 
 - Updated dependencies: `camera` to `^0.12.0+2` and
   `google_mlkit_text_recognition` to `^0.16.0`.
-- Example app: added the Android launcher icon.
+- Example app: added the Android and iOS launcher icons.
 - No API changes.
 
 ## 0.1.1
