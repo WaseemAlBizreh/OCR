@@ -635,7 +635,7 @@ Fill it from the existing front and back checks.
 ## I7. A running read can't be cancelled
 
 - [x] Fixed in idlens with a time limit instead of a cancel token (2026-11-03,
-      not committed or released)
+      committed in 24fdd47, not released)
 - [ ] Adopted in the app
 
 **Summary of the fix**
