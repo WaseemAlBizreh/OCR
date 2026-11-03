@@ -9,7 +9,7 @@ These bugs are in the `idlens` package ([`WaseemAlBizreh/OCR`](https://github.co
 | [I1](#i1-a-missing-field-is-treated-as-a-value-to-review) | A missing field is treated as a value to review | **Fixed, not released** | Next release (breaking API change) |
 | [I2](#i2-a-model-that-fails-to-load-breaks-every-later-scan) | A model that fails to load breaks every later scan | **Fixed, not released** | Next release |
 | [I3](#i3-image-work-runs-on-the-ui-isolate) | Image work runs on the UI isolate | **Fixed, not released** | Next release |
-| [I4](#i4-some-certificate-values-have-no-confidence-score) | Some certificate values have no confidence score | Medium | 0.1.4 |
+| [I4](#i4-some-certificate-values-have-no-confidence-score) | Some certificate values have no confidence score | **Fixed by removing the score, not released** | Next release (breaking API change) |
 | [I5](#i5-an-out-of-frame-id-front-fails-the-whole-scan) | An out-of-frame ID front fails the whole scan | Medium | 0.2.0 |
 | [I6](#i6-issues-dont-say-which-side-of-the-id-caused-them) | Issues don't say which side of the ID caused them | Low | 0.2.0 |
 | [I7](#i7-a-running-read-cant-be-cancelled) | A running read can't be cancelled | Low | Later |
@@ -351,8 +351,50 @@ The "Reading document..." spinner and the rest of the UI may stop during a read,
 
 ## I4. Some certificate values have no confidence score
 
-- [ ] Fixed in idlens
+- [x] Fixed in idlens by removing `confidence` (2026-11-03, not committed or
+      released)
 - [ ] Adopted in the app
+
+**Summary of the fix**
+
+`CivilRegistryResult.confidence` was removed instead of fixed. While reading the
+code, a second problem turned up: ML Kit never gave idlens a score, so every
+value it read showed 1.0 (100%). Certificate numbers often come from ML Kit,
+because Paddle drops digits next to Arabic text, so the app's 60% limit let
+badly read numbers through. ML Kit gives a line score on Android but none on
+iOS, so no honest score exists for those values on iPhones.
+
+The score was also only on certificates, idlens never used it, and it competed
+with `fieldsToCheck` from [I1](#i1-a-missing-field-is-treated-as-a-value-to-review)
+as a second way to say "this value may be wrong". Removing it fixes I4 and the
+fake 100%, and keeps the result simple. If the accuracy test shows that low
+scores predict wrong values, idlens can use the score internally and list those
+fields in `fieldsToCheck` (the `lowConfidence` rule decided in I1).
+
+| Before | Now |
+|---|---|
+| `CivilRegistryResult.confidence`, missing for values found without their label | Removed |
+| ML Kit values scored 1.0 | No score anywhere |
+| `confidence` in the certificate's `toJson()` | Removed |
+
+The unused `PassportLine.confidence` was removed too. Paddle still drops
+lines below its own score limit while reading, as before.
+
+**Files changed:** `api/civil_registry_result.dart`, `scan_runner.dart`, the
+certificate parser, reading, scan service and text reader,
+`passport/passport_line.dart`, the Paddle passport text and MRZ readers,
+`test/scan_outcome_test.dart`, the README and `CHANGELOG.md`.
+
+**How it was checked:** `flutter analyze` reports no issues for the package or
+the example. 60 tests in the certificate parser, label, result and review test
+files pass in a scratch Dart package. Values read are unchanged: only the
+score was removed.
+
+**Still needed in the MTN app**
+
+- Remove `trusted` and the 60% limit from `fromCertificate`. Fill every value
+  idlens returns, and use `fieldsToCheck` as for ID cards and passports.
+- Close [B13](SIM_REGISTRATION_OCR_BUGS.md#b13-some-good-certificate-values-are-thrown-away).
 
 **What happens**
 
@@ -366,7 +408,7 @@ The "Reading document..." spinner and the rest of the UI may stop during a read,
 
 The app treats a missing score as 0 and drops the value. So the extra work idlens does to recover these values is thrown away, and the dealer has to type them.
 
-**Recommended fix**
+**Original suggestion (not used, see the summary above)**
 
 Record the score of the line each value came from, in all three paths. Add to the parser tests that every non-null field has a score, except values that are copied from elsewhere, if any.
 

@@ -11,7 +11,6 @@ class PassportLine {
     this.top,
     this.right,
     this.bottom, {
-    this.confidence = 1,
     this.alts = const [],
   });
 
@@ -20,7 +19,6 @@ class PassportLine {
   final double top;
   final double right;
   final double bottom;
-  final double confidence;
 
   /// Other engines' readings of the same spot. Used only to recognise a label
   /// whose main reading is garbled (Paddle may mangle an English title that
@@ -41,7 +39,6 @@ class PassportLine {
     top,
     right,
     bottom,
-    confidence: confidence,
     alts: alts,
   );
 
@@ -51,7 +48,6 @@ class PassportLine {
     top,
     right,
     bottom,
-    confidence: confidence,
     alts: value,
   );
 

@@ -14,6 +14,9 @@ text.
 - `ScanIssue.mrzCheckDigitsFailed` is removed. The fields a failed check digit
   covers are listed in `fieldsToCheck`.
 - `ScanOutcome.statusFor` is removed.
+- `CivilRegistryResult.confidence` is removed. Values found without their
+  label had no score, and values read by ML Kit always showed 1.0, so the
+  scores weren't reliable. Use `fieldsToCheck` for every document instead.
 - A certificate with none of its required fields read is now `failed`.
 - A date that can't be right is kept as read and listed in `fieldsToCheck`. That
   covers an ID card or passport issue date on or after the expiry date, which

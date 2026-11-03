@@ -8,7 +8,6 @@ import 'package:idlens/src/data/ocr/paddle/passport/passport_line.dart';
 class CertificatePage {
   const CertificatePage(
     this.fields,
-    this.confidence,
     this.warnings, {
     this.doubtfulFields = const [],
   });
@@ -16,8 +15,6 @@ class CertificatePage {
   /// Keyed by [CertificateField.name]; null when not found.
   final Map<String, String?> fields;
 
-  /// OCR confidence (0..1) of the line each value came from.
-  final Map<String, double> confidence;
   final List<String> warnings;
 
   /// Keys in [fields] whose value was read but may be wrong.
@@ -98,36 +95,30 @@ class CivilRegistryParser {
 
     // Texts to try for one field, in priority order: the rest of the label's
     // own line, then the nearby lines.
-    Iterable<({String text, double confidence})> sources(
-      CertificateField field,
-    ) sync* {
+    Iterable<String> sources(CertificateField field) sync* {
       for (final hit in hits.where((h) => h.field == field)) {
-        yield (text: hit.inline, confidence: hit.line.confidence);
+        yield hit.inline;
         // Digits ML Kit read inside the label's own box (Paddle drops them).
         for (final d in page) {
           if (!identical(d, hit.line) &&
               !labelLines.contains(d) &&
               _hasDigit.hasMatch(d.text) &&
               hit.line.overlapRatio(d) > 0.6) {
-            yield (text: d.text, confidence: d.confidence);
+            yield d.text;
           }
         }
         for (final c in candidates(hit)) {
-          yield (text: c.text, confidence: c.confidence);
+          yield c.text;
         }
       }
     }
 
     final fields = <String, String?>{};
-    final confidence = <String, double>{};
     for (final field in _readable) {
       String? value;
       for (final source in sources(field)) {
-        value = _extract(field, source.text);
-        if (value != null) {
-          confidence[field.name] = source.confidence;
-          break;
-        }
+        value = _extract(field, source);
+        if (value != null) break;
       }
       fields[field.name] = value;
     }
@@ -146,7 +137,6 @@ class CivilRegistryParser {
     ];
     return CertificatePage(
       fields,
-      confidence,
       warnings,
       doubtfulFields: doubtful,
     );

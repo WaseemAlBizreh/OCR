@@ -208,7 +208,6 @@ class ScanRunner {
         },
         scannedAt: reading.scannedAt,
         fields: reading.fields,
-        confidence: reading.confidence,
       );
     } catch (error) {
       return CivilRegistryResult(

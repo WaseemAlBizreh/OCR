@@ -64,7 +64,6 @@ class CivilRegistryScanService {
 
     return CivilRegistryReading(
       fields: fields,
-      confidence: page.confidence,
       warnings: warnings,
       doubtfulFields: page.doubtfulFields,
       imagePath: pagePath,

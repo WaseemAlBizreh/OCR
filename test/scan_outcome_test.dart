@@ -72,17 +72,16 @@ void main() {
       },
     );
 
-    test('civil registry reads its own fields and confidence', () {
+    test('civil registry reads its own fields', () {
       final result = CivilRegistryResult(
         status: ScanStatus.needsReview,
         scannedAt: scannedAt,
         fields: const {'name': 'x', 'dateOfBirth': '1990-01-02'},
-        confidence: const {'name': 0.9},
       );
       expect(result.documentKind, DocumentKind.civilRegistryCertificate);
       expect(result.name, 'x');
       expect(result.dateOfBirth, DateTime(1990, 1, 2));
-      expect(result.toJson()['confidence'], {'name': 0.9});
+      expect(result.toJson().containsKey('confidence'), isFalse);
       expect(result.mrz, isNull);
     });
 

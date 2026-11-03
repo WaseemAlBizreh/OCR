@@ -5,7 +5,7 @@ import 'package:idlens/src/domain/document_kind.dart';
 /// has no MRZ, so [ScanOutcome.mrz] is always null and there are no check
 /// digits: `verified` here means only that nothing was found wrong with the
 /// photo and the national number, name and date of birth were read. It does
-/// not prove the values are correct; see [confidence].
+/// not prove the values are correct.
 class CivilRegistryResult extends ScanOutcome {
   /// Creates a result. Built by idlens; apps read it.
   const CivilRegistryResult({
@@ -16,15 +16,10 @@ class CivilRegistryResult extends ScanOutcome {
     super.diagnostics,
     required super.scannedAt,
     this.fields = const {},
-    this.confidence = const {},
   }) : super(documentKind: DocumentKind.civilRegistryCertificate);
 
   @override
   final Map<String, dynamic> fields;
-
-  /// OCR confidence (0..1) of the line each field was read from, keyed like
-  /// [fields].
-  final Map<String, double> confidence;
 
   /// The registry office that issued the certificate.
   String? get registryOffice => fields['registryOffice'] as String?;
@@ -61,10 +56,4 @@ class CivilRegistryResult extends ScanOutcome {
 
   /// The mother's name.
   String? get motherName => fields['motherName'] as String?;
-
-  @override
-  Map<String, dynamic> toJson() => {
-    ...super.toJson(),
-    'confidence': confidence,
-  };
 }

@@ -36,7 +36,6 @@ class PaddlePassportTextReader {
           l.box.top,
           l.box.right,
           l.box.bottom,
-          confidence: l.confidence,
         ),
     ];
     final page = mlkit ?? await _mlkit.read(imagePath);

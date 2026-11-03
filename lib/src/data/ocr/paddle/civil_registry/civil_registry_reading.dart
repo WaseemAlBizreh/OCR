@@ -2,7 +2,6 @@
 class CivilRegistryReading {
   CivilRegistryReading({
     required this.fields,
-    this.confidence = const {},
     this.warnings = const [],
     this.doubtfulFields = const [],
     this.imagePath,
@@ -14,8 +13,6 @@ class CivilRegistryReading {
   /// Keyed by `CertificateField.name`; null when a field was not found.
   final Map<String, String?> fields;
 
-  /// OCR confidence (0..1) of the line each value came from.
-  final Map<String, double> confidence;
   final List<String> warnings;
 
   /// Keys in [fields] whose value was read but may be wrong.
@@ -33,7 +30,6 @@ class CivilRegistryReading {
   Map<String, dynamic> toJson() => {
     'documentKind': 'civilRegistryCertificate',
     'fields': fields,
-    'confidence': confidence,
     'warnings': warnings,
     'doubtfulFields': doubtfulFields,
     if (imagePath != null) 'image': imagePath,

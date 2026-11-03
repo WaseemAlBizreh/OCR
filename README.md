@@ -345,9 +345,6 @@ change:
   has no required fields, because the MRZ carries the identity.
 - An ID card `phone` that doesn't have exactly 10 digits.
 
-idlens doesn't judge OCR confidence. A certificate's `confidence` gives a score
-for each field, if your app wants to apply its own limit.
-
 ### Fields
 
 Every field is nullable: a value that couldn't be read is `null`. Dates are
@@ -367,8 +364,7 @@ expiry date).
 
 **`CivilRegistryResult`:** `registryOffice`, `issueDate`, `nationalNumber`,
 `name`, `placeOfBirth`, `dateOfBirth`, `maritalStatus`, `gender`,
-`nationalityType`, `profession`, `workAddress`, `motherName`, and `confidence`
-(0 to 1 for each field).
+`nationalityType`, `profession`, `workAddress` and `motherName`.
 
 An expired document isn't an issue. Use `isExpired` if your app has a rule for
 it.
