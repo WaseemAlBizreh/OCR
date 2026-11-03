@@ -1,4 +1,5 @@
 import 'package:idlens/src/data/identity_scan_service.dart';
+import 'package:idlens/src/data/image/document_frame_checker.dart';
 import 'package:idlens/src/data/image/frame_edge_checker.dart';
 import 'package:idlens/src/data/image/image_ops.dart';
 import 'package:idlens/src/data/image/image_quality_checker.dart';
@@ -35,6 +36,7 @@ class IdLensServices {
   late final ImageQualityChecker imageQualityChecker = ImageQualityChecker(
     imageOps,
   );
+  late final DocumentFrameChecker documentFrameChecker = DocumentFrameChecker();
   late final FrameEdgeChecker frameEdgeChecker = FrameEdgeChecker(
     mlKitLatinReader,
   );

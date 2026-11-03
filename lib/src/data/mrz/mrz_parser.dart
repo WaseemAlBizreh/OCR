@@ -108,10 +108,35 @@ class MrzParser {
       for (var i = 0; i < lines.length; i++)
         _fit(lines[i], format.lineLength, stretchFiller: i != nameLine),
     ];
-    return switch (format) {
+    final data = switch (format) {
       MrzFormat.td1 => _parseTd1(fitted),
       MrzFormat.td3 => _parseTd3(fitted),
     };
+    return isCut(lines, format) ? data.withCut() : data;
+  }
+
+  /// Whether the photo cut the MRZ off, judged from the [lines] as read
+  /// (before they are fitted to length). A line read short is normally a
+  /// dropped `<`, which the parser repairs, but not in these cases:
+  ///
+  /// - the line holding the composite check digit doesn't end in it: that
+  ///   digit is the line's last character, so the end was lost;
+  /// - the name line doesn't end in `<`: the name runs into the cut, so its
+  ///   last letters are missing, and no check digit covers a name;
+  /// - the first line doesn't start with its document code (`I`, `A` or `C`
+  ///   on an ID card, `P` on a passport): the start was lost.
+  static bool isCut(List<String> lines, MrzFormat format) {
+    if (lines.length != format.lineCount) return false;
+    final length = format.lineLength;
+    final (nameLine, checkLine, codes) = switch (format) {
+      MrzFormat.td1 => (2, 1, 'IAC'),
+      MrzFormat.td3 => (0, 1, 'P'),
+    };
+    bool short(int i) => lines[i].isNotEmpty && lines[i].length < length;
+    if (short(checkLine) && lines[checkLine].endsWith('<')) return true;
+    if (short(nameLine) && !lines[nameLine].endsWith('<')) return true;
+    if (short(0) && !codes.contains(lines[0][0])) return true;
+    return false;
   }
 
   MrzData _parseTd1(List<String> l) {

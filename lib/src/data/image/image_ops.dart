@@ -1,6 +1,7 @@
 import 'dart:io';
 import 'dart:math' as math;
 
+import 'package:idlens/src/domain/document_framing.dart';
 import 'package:opencv_dart/opencv.dart' as cv;
 import 'package:path_provider/path_provider.dart';
 
@@ -123,6 +124,19 @@ class ImageOps {
       }
       hierarchy.dispose();
       if (corners == null) return null;
+      // A page reaching the photo's edge is cut off. Flattening it would hide
+      // that from the framing check, so the plain photo is kept.
+      final dx = small.cols * DocumentFraming.edgeMargin;
+      final dy = small.rows * DocumentFraming.edgeMargin;
+      if (corners.any(
+        (p) =>
+            p.x <= dx ||
+            p.y <= dy ||
+            p.x >= small.cols - dx ||
+            p.y >= small.rows - dy,
+      )) {
+        return null;
+      }
 
       // Order: top-left, top-right, bottom-right, bottom-left.
       int sum(cv.Point p) => p.x + p.y;

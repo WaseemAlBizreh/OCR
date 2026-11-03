@@ -23,6 +23,7 @@ class MrzData {
     required this.givenNames,
     required this.optionalData,
     required this.checks,
+    this.cutOff = false,
   });
 
   final MrzFormat format;
@@ -44,6 +45,29 @@ class MrzData {
   /// expiryDate, composite, and personalNumber for TD3).
   final Map<String, bool> checks;
 
+  /// True when the photo cut part of the MRZ off: a line was read short and
+  /// is missing its first or last characters. The name has no check digit, so
+  /// a cut name line can't be caught any other way.
+  final bool cutOff;
+
+  /// This MRZ, marked as cut off.
+  MrzData withCut() => MrzData(
+    format: format,
+    lines: lines,
+    documentCode: documentCode,
+    issuingCountry: issuingCountry,
+    documentNumber: documentNumber,
+    dateOfBirth: dateOfBirth,
+    sex: sex,
+    expiryDate: expiryDate,
+    nationality: nationality,
+    surname: surname,
+    givenNames: givenNames,
+    optionalData: optionalData,
+    checks: checks,
+    cutOff: true,
+  );
+
   bool get isValid => checks.values.every((passed) => passed);
 
   int get passedChecks => checks.values.where((passed) => passed).length;
@@ -64,6 +88,7 @@ class MrzData {
     'optionalData': optionalData,
     'checks': checks,
     'isValid': isValid,
+    'cutOff': cutOff,
     'lines': lines,
   };
 }

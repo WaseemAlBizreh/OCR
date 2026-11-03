@@ -12,13 +12,21 @@ class CardFrame {
   });
 
   /// A frame as wide as [widthFactor] of the preview, centred, with the given
-  /// document [aspectRatio] (width / height).
+  /// document [aspectRatio] (width / height). A tall document (an A4 page) is
+  /// made narrower so the frame is at most [heightFactor] of the preview high.
+  ///
+  /// Both factors leave room around the frame for [captureMargin], so the
+  /// photo shows background on every side of a well-placed document.
   factory CardFrame.centered({
     required Size previewSize,
     required double aspectRatio,
-    double widthFactor = 0.92,
+    double widthFactor = 0.86,
+    double heightFactor = 0.86,
   }) {
-    final width = previewSize.width * widthFactor;
+    final width = [
+      previewSize.width * widthFactor,
+      previewSize.height * heightFactor * aspectRatio,
+    ].reduce((a, b) => a < b ? a : b);
     final height = width / aspectRatio;
     final left = (previewSize.width - width) / 2;
     final top = (previewSize.height - height) / 2;
@@ -29,6 +37,13 @@ class CardFrame {
       bottom: (top + height) / previewSize.height,
     );
   }
+
+  /// The photo is cropped this much (fraction of the frame's width and
+  /// height) wider than the frame on every side. The background this keeps
+  /// around the document is how a cut-off document is recognised: a
+  /// well-placed one never reaches the photo's edges. It also keeps the MRZ
+  /// of a card held slightly low.
+  static const captureMargin = 0.06;
 
   final double left;
   final double top;

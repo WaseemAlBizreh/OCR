@@ -10,8 +10,13 @@ class ImageQualityChecker {
 
   final ImageOps _imageOps;
 
-  /// Returns null when the image cannot be read.
-  Future<ImageQuality?> check(String imagePath, DocumentKind kind) async {
+  /// Returns null when the image cannot be read. [documentCoverage] comes
+  /// from `DocumentFrameChecker`, which measures the whole photo.
+  Future<ImageQuality?> check(
+    String imagePath,
+    DocumentKind kind, {
+    double documentCoverage = 1,
+  }) async {
     String? bandPath;
     try {
       bandPath = await _imageOps.crop(
@@ -25,7 +30,7 @@ class ImageQualityChecker {
         sharpness: quality.sharpness,
         brightness: quality.brightness,
         glareShare: quality.glareShare,
-        documentCoverage: await _coverage(imagePath),
+        documentCoverage: documentCoverage,
       );
     } catch (_) {
       return null;
@@ -39,7 +44,10 @@ class ImageQualityChecker {
   /// text-dense tiles only (blank paper has no edges even in a sharp photo),
   /// and how much of the frame the document covers. Glare is not judged: a
   /// white page would always look like glare.
-  Future<ImageQuality?> checkWhole(String imagePath) async {
+  Future<ImageQuality?> checkWhole(
+    String imagePath, {
+    double documentCoverage = 1,
+  }) async {
     final image = await cv.imreadAsync(imagePath, flags: cv.IMREAD_GRAYSCALE);
     if (image.isEmpty) {
       image.dispose();
@@ -82,59 +90,8 @@ class ImageQualityChecker {
         sharpness: sharpness,
         brightness: page.mean().val1,
         glareShare: 0,
-        documentCoverage: await _coverage(imagePath),
+        documentCoverage: documentCoverage,
       );
-    } finally {
-      for (final m in mats) {
-        m.dispose();
-      }
-    }
-  }
-
-  /// Share of the frame taken by the largest bright region (the document on
-  /// a darker background). 1 when no clear region is found, so an unusual
-  /// background never makes a good photo look like a far one.
-  Future<double> _coverage(String imagePath) async {
-    final image = await cv.imreadAsync(imagePath, flags: cv.IMREAD_GRAYSCALE);
-    if (image.isEmpty) {
-      image.dispose();
-      return 1;
-    }
-    final mats = <cv.Mat>[image];
-    try {
-      final scale = 400 / image.cols;
-      final small = await cv.resizeAsync(image, (
-        400,
-        (image.rows * scale).round().clamp(1, 1 << 20),
-      ), interpolation: cv.INTER_AREA);
-      final blurred = await cv.gaussianBlurAsync(small, (7, 7), 0);
-      final (_, binary) = await cv.thresholdAsync(
-        blurred,
-        0,
-        255,
-        cv.THRESH_BINARY | cv.THRESH_OTSU,
-      );
-      final kernel = cv.getStructuringElement(cv.MORPH_RECT, (15, 15));
-      final closed = await cv.morphologyExAsync(binary, cv.MORPH_CLOSE, kernel);
-      mats.addAll([small, blurred, binary, kernel, closed]);
-
-      final (contours, hierarchy) = await cv.findContoursAsync(
-        closed,
-        cv.RETR_EXTERNAL,
-        cv.CHAIN_APPROX_SIMPLE,
-      );
-      var best = 0.0;
-      cv.Rect? box;
-      for (var i = 0; i < contours.length; i++) {
-        final area = cv.contourArea(contours[i]);
-        if (area > best) {
-          best = area;
-          box = cv.boundingRect(contours[i]);
-        }
-      }
-      hierarchy.dispose();
-      if (box == null) return 1;
-      return (box.width * box.height) / (small.cols * small.rows);
     } finally {
       for (final m in mats) {
         m.dispose();

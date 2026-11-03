@@ -10,7 +10,7 @@ These bugs are in the `idlens` package ([`WaseemAlBizreh/OCR`](https://github.co
 | [I2](#i2-a-model-that-fails-to-load-breaks-every-later-scan) | A model that fails to load breaks every later scan | **Fixed, not released** | Next release |
 | [I3](#i3-image-work-runs-on-the-ui-isolate) | Image work runs on the UI isolate | **Fixed, not released** | Next release |
 | [I4](#i4-some-certificate-values-have-no-confidence-score) | Some certificate values have no confidence score | **Fixed by removing the score, not released** | Next release (breaking API change) |
-| [I5](#i5-an-out-of-frame-id-front-fails-the-whole-scan) | An out-of-frame ID front fails the whole scan | Medium | 0.2.0 |
+| [I5](#i5-a-cut-off-document-is-accepted) | A cut-off document is accepted | **Fixed, not released** (limits to check on real photos) | Next release |
 | [I6](#i6-issues-dont-say-which-side-of-the-id-caused-them) | Issues don't say which side of the ID caused them | Low | 0.2.0 |
 | [I7](#i7-a-running-read-cant-be-cancelled) | A running read can't be cancelled | Low | Later |
 | [I8](#i8-a-document-far-from-the-camera-can-be-accepted) | A document far from the camera can be accepted | High | 0.1.4 |
@@ -428,38 +428,127 @@ Record the score of the line each value came from, in all three paths. Add to th
 
 ---
 
-## I5. An out-of-frame ID front fails the whole scan
+## I5. A cut-off document is accepted
 
-- [ ] Fixed in idlens
+- [x] Fixed in idlens (2026-11-03, not committed or released). The limits
+      still need checking on real photos (step 1 below).
 - [ ] Adopted in the app
+
+**Summary of the fix**
+
+The decision: a cut-off document gives `documentNotInFrame` and `failed`, as
+before. What changed is that idlens now notices it.
+
+- **A margin around every photo.** The built-in camera used to crop the ID
+  front and the certificate exactly to the box, so nothing in the photo could
+  show a cut. It now crops every document 6% wider than the box on each side
+  (`CardFrame.captureMargin`), so a well-placed document has background all
+  around it. The box is a little smaller (86% of the preview instead of 92%,
+  and an A4 box is limited by height) so the margin always fits.
+- **Three checks, strongest first** (`DocumentFraming`, measured by
+  `DocumentFrameChecker`):
+  1. **Outline:** the document's 4 corners, which must be at least 30% of
+     the photo and have the document's shape. A corner at an edge means cut
+     off.
+  2. **Bright area** against the background, when no outline is found: it
+     runs past an edge when it lies along that edge for at least half its own
+     side. A hand holding the card touches the edge over a much shorter
+     stretch, so it doesn't count.
+  3. **Text at the edges**, when neither can tell (a light table, or a photo
+     cropped with no margin). **One edge is now enough**, instead of two.
+- **The ID back is checked** like every other photo.
+- **The certificate is never flattened when its outline reaches the photo's
+  edge**, because flattening would hide the cut.
+- The "too far" coverage now comes from the same measurement. Because of the
+  margin, a well-placed card covers about 80% of the photo instead of 100%, so
+  the limit was moved from 0.6 to 0.42 (`ImageQuality.minDocumentCoverage`).
+  A device test showed why: a card filling 80–90% of the box was rejected
+  with the old limit. Now a card at 80% of the box or more is accepted, and one
+  at 60% (too far, also seen on a device) is still rejected. This helps
+  [I8](#i8-a-document-far-from-the-camera-can-be-accepted) but doesn't close it.
+- **A cut MRZ fails the scan** (added after a device test, 2026-11-03). A
+  photo of an ID back cut on the right lost the last character of every MRZ
+  line, so the name `MERGHANI` was read as `MERGHAN`. The MRZ reader pads a
+  short line with `<`, and a name has no check digit, so nothing flagged it.
+  `MrzParser.isCut` now looks at the lines as read: a check-digit line that
+  doesn't end in its digit, a name line that doesn't end in `<`, or a first
+  line that doesn't start with its document code means the photo cut the MRZ.
+  That gives `documentNotInFrame` even when the photo checks can't tell. A `<`
+  dropped in the middle of a line is still repaired as before.
+- `diagnostics['framing']` (and `frontFraming` for an ID card) says which check
+  decided and which edges were cut, with the measurements, so real photos can
+  be compared.
+
+Checked on drawn test photos with the same OpenCV steps: a card moved 10-16%
+left, right or down is caught on a dark or mid-grey table, a card held by a
+hand and a card 3% off-centre are accepted, and a card at 60% of the box gets a
+coverage of 0.47 (too far). On a light table, the outline is still found for a
+well-placed card. A cut-off card on a light table falls back to the text check.
+
+Tests: `test/document_framing_test.dart` (the rules), `test/card_frame_test.dart`
+(the margin always fits), `test/mrz_parser_test.dart` (cut MRZ lines, with the
+device case), and `test/image_quality_test.dart`. Not tried on a
+phone yet.
+
+**Still to do:** take good, cut-off and far photos of each document on light
+and dark tables, read `diagnostics['framing']`, and adjust the limits in
+`DocumentFraming` if needed.
+
+**The original report**
 
 **What happens**
 
-In `scan_runner.dart`, `idCard` passes the front photo's issue into `_judge`. `documentNotInFrame` is in `_unreadable` in `api/scan_outcome.dart`, so the status becomes `failed`, even when the back's MRZ is valid and its values were read.
+Seen on a device: a photo with part of the document outside it is accepted, sometimes as `verified`, sometimes with values to review. It happens on every document:
+
+- **ID back:** the card was moved a little to one side, so one edge was cut off. The scan was accepted.
+- **ID front:** the same, moved a little to the left. The scan was accepted.
+- **Passport and certificate:** the same.
+
+idlens has two framing checks, and neither one catches a document cut off on one side:
+
+- **Cut-off check** (`PassportFrameCheck.touchedSides`): reports `documentNotInFrame` only when printed text runs to **2 or more** edges of the photo (`ScanIssueResolver.cutOffSides = 2`). A document moved to one side is cut on **one** edge, so it always passes.
+- **The ID back has no cut-off check.** `PaddlePassportScanService` and `checkPhoto` (ID front, certificate) measure the edges, but `IdentityScanService` never sets `frameTouchedSides` for the ID back, so it's always 0.
+- **Distance check** (`ImageQualityChecker._coverage`): a cut-off document still fills most of the photo, so it passes. This check also misses documents that are too far away; see [I8](#i8-a-document-far-from-the-camera-can-be-accepted).
 
 **Why it matters**
 
-The MRZ is the most reliable data on the card, and its check digits can prove it was read correctly. A slightly cut-off front currently sends a `failed` result, and the app discards everything.
+A cut-off photo can lose values, or give wrong ones from a half-read line, and it's a poor image for the backend's KYC record. The dealer gets no warning, so they don't retake it.
+
+**Also wrong today: when a framing problem is found, the scan fails**
+
+When `documentNotInFrame` is reported, `ScanReview.statusFor` returns `failed`, even when the MRZ was read and passes every check digit. The built-in flow warns about a cut-off ID front before reading, and the dealer can choose to continue. The result is still `failed`, so continuing does nothing. Once the checks above catch more photos, this decides what the dealer sees.
+
+**Decision needed before fixing**
+
+When idlens finds a cut-off or far document, should the scan return:
+
+- **`failed`:** the dealer must retake, even when the MRZ was read correctly.
+- **`needsReview`, with the issue kept:** the values are kept, and the app shows a warning with a retake button.
 
 **Recommended fix**
 
-Return `failed` for a front framing problem only when the front gave no values and the MRZ isn't valid. Otherwise return `needsReview`, and keep the issue so that the app can ask for a retake.
+1. Collect real photos first: good, cut off on one side, and far away, for each document type, on light and dark backgrounds.
+2. Find the document itself, not only its text. Use the document's outline, as `cropPage` already does for the certificate. If its 4 corners aren't all inside the photo, it's cut off. For the ID back and the passport, the MRZ line width is a second measure.
+3. Run the cut-off check on the ID back too.
+4. Set the limits from the real photos, and add them to `test/image_quality_test.dart`.
+5. Apply the decision above in `ScanReview.statusFor`.
 
 **Expected behaviour after the fix**
 
-| Front | Back MRZ | `status` |
-|---|---|---|
-| Out of frame, some values read | Valid | `needsReview` |
-| Out of frame, nothing read | Valid | `needsReview` |
-| Out of frame, nothing read | Not found | `failed` |
-| In frame | Valid | `verified`, if nothing else is wrong |
+| Photo | Result |
+|---|---|
+| Document fully inside the box | No framing problem |
+| Cut off on one side, any document | `documentNotInFrame` |
+| Cut off on one side, ID back with a valid MRZ | `documentNotInFrame`, status as decided above |
+| Too far away | Covered by [I8](#i8-a-document-far-from-the-camera-can-be-accepted) |
 
 **What to change in the app after the fix**
 
-- Upgrade to 0.2.0.
-- Make sure the `documentNotInFrame` dialog still offers a retake when the form is filled.
-- Decide [D3](SIM_REGISTRATION_OCR_BUGS.md#part-3-decisions-needed), which covers the other failed scans that still return values. This fix doesn't settle B8 by itself.
-- Update the service tests for an ID with an out-of-frame front.
+- Upgrade idlens.
+- Make sure the `documentNotInFrame` dialog offers a retake for every document type.
+- The app uses its own camera ([B27](SIM_REGISTRATION_OCR_BUGS.md#b27-the-apps-camera-skips-steps-from-idlens-camera)). Crop the photo 6% wider than the box on every side, as idlens' camera now does, and make the box smaller (86% of the preview) so that margin fits. Without the margin, only the text check works.
+- Decide [D3](SIM_REGISTRATION_OCR_BUGS.md#part-3-decisions-needed) with the decision above, because together they settle B8.
+- Add cut-off photos of each document to [`docs/testing/DEVICE_SMOKE.md`](../testing/DEVICE_SMOKE.md), and update the service tests.
 
 ---
 

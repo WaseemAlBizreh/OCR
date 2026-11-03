@@ -42,6 +42,25 @@ text.
   and its text-box search run on a short-lived worker isolate; the
   recognizer's output is read as a float list instead of being copied value by
   value. Results are the same for the same photo, and no API changes.
+- Fixed: a document cut off on one side of the photo was accepted, on every
+  document. A cut-off document now gives `documentNotInFrame` (status
+  `failed`). idlens looks for the document's outline first, then for its
+  bright area against the background, and only then for printed text at the
+  photo's edges. One edge is now enough; it used to take two. The ID back is
+  now checked too.
+- The built-in camera keeps a margin of background around the frame for every
+  document, not only on MRZ pages, and the frame is a little smaller so that
+  margin always fits. For `process...`, keep a thin strip of background
+  around the document too (see the README).
+- Fixed: an MRZ cut off by the photo was padded and accepted, so a name could
+  lose its last letters with no warning (names have no check digit). An MRZ
+  line that is missing its first or last characters now gives
+  `documentNotInFrame`. `MrzData` has a new `cutOff` flag.
+- The "too far" limit is now 0.42 of the photo, set for the new margin: a
+  document filling at least 80% of the box is accepted, one at 60% is too
+  far.
+- `diagnostics` has a new `framing` entry (and `frontFraming` for an ID card)
+  saying how the framing was judged.
 
 ## 0.1.3
 

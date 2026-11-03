@@ -39,6 +39,25 @@ void main() {
     );
   });
 
+  group('distance, for a document filling a share of the box', () {
+    // The photo is the box plus a 6% margin on every side.
+    double coverageAt(double widthInBox) =>
+        (widthInBox / 1.12) * (widthInBox / 1.12);
+
+    for (final width in [1.0, 0.9, 0.85, 0.8]) {
+      test('${(width * 100).round()}% of the box is accepted', () {
+        expect(quality(coverage: coverageAt(width)).problem, isNull);
+      });
+    }
+
+    test('60% of the box is too far', () {
+      expect(
+        quality(coverage: coverageAt(0.6)).problem,
+        ScanIssue.documentNotInFrame,
+      );
+    });
+  });
+
   test('the dim, unclear passport photo measured on a device is flagged', () {
     // sharpness 45.9, brightness 96.1, glare 0.00015
     expect(
@@ -59,20 +78,21 @@ void main() {
       );
     });
 
-    test(
-      'text cut off at two edges is documentNotInFrame even with an MRZ',
-      () {
-        expect(
-          ScanIssueResolver.resolve(recognizedFields: 8, frameTouchedSides: 2),
-          ScanIssue.documentNotInFrame,
-        );
-      },
-    );
-
-    test('text at only one edge is accepted', () {
+    test('a cut-off document is documentNotInFrame even with an MRZ', () {
       expect(
-        ScanIssueResolver.resolve(recognizedFields: 8, frameTouchedSides: 1),
-        isNull,
+        ScanIssueResolver.resolve(recognizedFields: 8, cutOff: true),
+        ScanIssue.documentNotInFrame,
+      );
+    });
+
+    test('a cut-off document wins over a dark photo', () {
+      expect(
+        ScanIssueResolver.resolve(
+          recognizedFields: 8,
+          imageIssue: ScanIssue.imageNotClear,
+          cutOff: true,
+        ),
+        ScanIssue.documentNotInFrame,
       );
     });
 

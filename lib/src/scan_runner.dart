@@ -11,6 +11,7 @@ import 'package:idlens/src/data/ocr/paddle/paddle_latin_hybrid_recognizer.dart';
 import 'package:idlens/src/data/ocr/paddle/paddle_ocr_engine.dart'
     show ReaderUnavailableException;
 import 'package:idlens/src/data/ocr/paddle/paddle_sudan_card_parser.dart';
+import 'package:idlens/src/domain/document_framing.dart';
 import 'package:idlens/src/domain/document_kind.dart';
 import 'package:idlens/src/domain/identity_scan_result.dart';
 import 'package:idlens/src/domain/image_quality.dart';
@@ -20,11 +21,14 @@ import 'package:idlens/src/services.dart';
 
 /// What the clarity and framing checks say about one photo.
 class PhotoCheck {
-  const PhotoCheck({this.issue, this.quality});
+  const PhotoCheck({this.issue, this.quality, this.framing});
 
   /// [ScanIssue.imageNotClear], [ScanIssue.documentNotInFrame] or null.
   final ScanIssue? issue;
   final ImageQuality? quality;
+
+  /// How the document sits in the photo, for `diagnostics`.
+  final Map<String, dynamic>? framing;
 }
 
 /// Runs a document through its pipeline and turns what comes out into a
@@ -43,18 +47,49 @@ class ScanRunner {
 
   final IdLensServices _services;
 
-  /// Clarity and framing of a photo that has no MRZ to read (an ID front, a
-  /// certificate), or of any whole photo.
-  Future<PhotoCheck> checkPhoto(String path) async {
-    final quality = await _services.imageQualityChecker.checkWhole(path);
-    final touched = await _services.frameEdgeChecker.touchedSides(path);
+  /// Clarity and framing of a photo of a [kind] document that has no MRZ to
+  /// read (an ID front, a certificate), or of any whole photo.
+  Future<PhotoCheck> checkPhoto(String path, DocumentKind kind) async {
+    final frame = await _services.documentFrameChecker.measure(path);
+    final quality = await _services.imageQualityChecker.checkWhole(
+      path,
+      documentCoverage: frame?.coverage ?? 1,
+    );
+    final verdict = await _framing(path, kind, frame);
     final issue = ScanIssueResolver.resolve(
       recognizedFields: 0,
       imageIssue: quality?.problem,
-      frameTouchedSides: touched,
+      cutOff: verdict.cutOff,
     );
-    return PhotoCheck(issue: issue, quality: quality);
+    return PhotoCheck(
+      issue: issue,
+      quality: quality,
+      framing: _framingJson(verdict, frame),
+    );
   }
+
+  /// Whether the document runs past an edge of the photo: from the photo
+  /// itself when it can tell, otherwise from printed text at the edges
+  /// ([textSides] when the pipeline already counted them).
+  Future<FrameVerdict> _framing(
+    String path,
+    DocumentKind kind,
+    FrameMeasure? frame, {
+    int? textSides,
+  }) async {
+    final fromPhoto = frame == null
+        ? null
+        : DocumentFraming.fromPhoto(frame, aspectRatio: kind.aspectRatio);
+    return fromPhoto ??
+        DocumentFraming.fromText(
+          textSides ?? await _services.frameEdgeChecker.touchedSides(path),
+        );
+  }
+
+  static Map<String, dynamic> _framingJson(
+    FrameVerdict verdict,
+    FrameMeasure? frame,
+  ) => {...verdict.toJson(), if (frame != null) 'measure': frame.toJson()};
 
   /// What was captured before the user stopped: nothing was read.
   ScanOutcome incomplete(
@@ -91,7 +126,9 @@ class ScanRunner {
     final images = _images(DocumentKind.sudanId, paths, temporary);
     final stopwatch = Stopwatch()..start();
     try {
-      final front = frontCheck ?? await checkPhoto(paths[DocumentSide.front]!);
+      final front =
+          frontCheck ??
+          await checkPhoto(paths[DocumentSide.front]!, DocumentKind.sudanId);
       final result = await _services.identityScanService.scan(
         kind: DocumentKind.sudanId,
         imagePaths: paths,
@@ -114,12 +151,12 @@ class ScanRunner {
         issue: judged.issue,
         fieldsToCheck: judged.fieldsToCheck,
         images: images,
-        diagnostics: _diagnostics(
-          result,
-          judged.quality,
-          front.quality,
-          stopwatch,
-        ),
+        diagnostics: {
+          ..._diagnostics(result, judged.quality, judged.framing, stopwatch),
+          if (front.quality != null)
+            'frontImageQuality': front.quality!.toJson(),
+          if (front.framing != null) 'frontFraming': front.framing,
+        },
         scannedAt: result.scannedAt,
         fields: result.identity,
         mrz: result.mrz,
@@ -151,7 +188,12 @@ class ScanRunner {
         issue: judged.issue,
         fieldsToCheck: judged.fieldsToCheck,
         images: images,
-        diagnostics: _diagnostics(result, judged.quality, null, stopwatch),
+        diagnostics: _diagnostics(
+          result,
+          judged.quality,
+          judged.framing,
+          stopwatch,
+        ),
         scannedAt: result.scannedAt,
         fields: result.identity,
         mrz: result.mrz,
@@ -177,9 +219,9 @@ class ScanRunner {
     }, temporary);
     final stopwatch = Stopwatch()..start();
     try {
-      final check = pageCheck ?? await checkPhoto(pagePath);
-      final reading = await _services.civilRegistryScanService.scan(pagePath);
       const kind = DocumentKind.civilRegistryCertificate;
+      final check = pageCheck ?? await checkPhoto(pagePath, kind);
+      final reading = await _services.civilRegistryScanService.scan(pagePath);
       final readable = ScanReview.isReadable(
         kind: kind,
         fields: reading.fields,
@@ -204,6 +246,7 @@ class ScanRunner {
           'rawText': reading.rawText,
           'rawMlKit': reading.rawMlKit,
           if (check.quality != null) 'imageQuality': check.quality!.toJson(),
+          if (check.framing != null) 'framing': check.framing,
           'scanMs': stopwatch.elapsedMilliseconds,
         },
         scannedAt: reading.scannedAt,
@@ -235,6 +278,7 @@ class ScanRunner {
       List<String> fieldsToCheck,
       ScanStatus status,
       ImageQuality? quality,
+      Map<String, dynamic>? framing,
     })
   >
   _judge(
@@ -245,17 +289,37 @@ class ScanRunner {
   }) async {
     final wrongDocument = _mrzValidator.isWrongDocument(result.mrz, kind);
     ImageQuality? quality;
+    FrameVerdict? verdict;
+    Map<String, dynamic>? framing;
     if (!wrongDocument) {
       // Even a found MRZ can come from a dark or blurry photo whose other
-      // fields are incomplete, so the photo is always measured.
-      quality = await _services.imageQualityChecker.check(mrzPagePath, kind);
+      // fields are incomplete, or a cut-off one, so the photo is always
+      // measured.
+      final frame = await _services.documentFrameChecker.measure(mrzPagePath);
+      quality = await _services.imageQualityChecker.check(
+        mrzPagePath,
+        kind,
+        documentCoverage: frame?.coverage ?? 1,
+      );
+      verdict = await _framing(
+        mrzPagePath,
+        kind,
+        frame,
+        textSides: result.frameTouchedSides,
+      );
+      framing = {
+        ..._framingJson(verdict, frame),
+        'mrzCut': result.mrz?.cutOff ?? false,
+      };
     }
     final resolved = ScanIssueResolver.resolve(
       wrongDocument: wrongDocument,
       mrzMissing: result.mrz == null,
       recognizedFields: result.recognizedFieldCount,
       imageIssue: quality?.problem,
-      frameTouchedSides: result.frameTouchedSides ?? 0,
+      // A cut MRZ line is proof on its own, even when the photo checks
+      // can't tell.
+      cutOff: (verdict?.cutOff ?? false) || (result.mrz?.cutOff ?? false),
     );
     final readable = ScanReview.isReadable(
       kind: kind,
@@ -281,13 +345,14 @@ class ScanRunner {
         fieldsToCheck: fieldsToCheck,
       ),
       quality: quality,
+      framing: framing,
     );
   }
 
   Map<String, dynamic> _diagnostics(
     IdentityScanResult result,
     ImageQuality? quality,
-    ImageQuality? frontQuality,
+    Map<String, dynamic>? framing,
     Stopwatch stopwatch,
   ) => {
     'warnings': result.warnings,
@@ -298,7 +363,7 @@ class ScanRunner {
     if (result.rawText.isNotEmpty)
       'rawText': {for (final e in result.rawText.entries) e.key.name: e.value},
     if (quality != null) 'imageQuality': quality.toJson(),
-    if (frontQuality != null) 'frontImageQuality': frontQuality.toJson(),
+    'framing': ?framing,
     'scanMs': stopwatch.elapsedMilliseconds,
   };
 

@@ -34,28 +34,23 @@ class ScanIssueResolver {
   /// in the frame.
   static const minFieldsInFrame = 2;
 
-  /// Printed text running up to this many edges of the photo means the
-  /// document is cut off.
-  static const cutOffSides = 2;
-
   /// [wrongDocument] is true when the MRZ belongs to another document,
   /// [mrzMissing] when a document that has an MRZ showed none,
   /// [recognizedFields] how many printed fields were read, [imageIssue] the
   /// photo-quality code (which can itself be [ScanIssue.documentNotInFrame]
-  /// when the document is small in the frame) and [frameTouchedSides] the
-  /// edges text runs up to.
+  /// when the document is small in the frame) and [cutOff] whether the
+  /// document runs past an edge of the photo (see `DocumentFraming`).
   static ScanIssue? resolve({
     bool wrongDocument = false,
     bool mrzMissing = false,
     required int recognizedFields,
     ScanIssue? imageIssue,
-    int frameTouchedSides = 0,
+    bool cutOff = false,
   }) {
     if (wrongDocument) return ScanIssue.wrongDocument;
     // A document far from the frame is also dark or blurry, but that is not
     // the real cause.
-    if (imageIssue == ScanIssue.documentNotInFrame ||
-        frameTouchedSides >= cutOffSides) {
+    if (imageIssue == ScanIssue.documentNotInFrame || cutOff) {
       return ScanIssue.documentNotInFrame;
     }
     if (mrzMissing && recognizedFields < minFieldsInFrame) {

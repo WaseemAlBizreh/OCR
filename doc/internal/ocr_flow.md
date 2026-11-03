@@ -26,7 +26,7 @@ engine has been measured on a set of real cards.
 | Object | What it is | Why it exists |
 |---|---|---|
 | `IdentityFlowPage` | the screen that runs a scan | collects the photos, picks the engine, shows the JSON |
-| `CardCameraPage` | camera screen | takes the photo and crops it to the card frame |
+| `CardCameraPage` | camera screen | takes the photo and crops it to the card frame plus a 6% margin of background, which the cut-off check needs |
 | `ImageOps` | crop helper (uses **OpenCV**) | crops and upscales images before OCR |
 | `IdentityScanService` | the orchestrator | runs MRZ, card text and merge in order |
 | `MrzReader` / `MrzParser` | MRZ stage | find the 3 MRZ lines and verify their check digits |

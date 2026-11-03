@@ -39,11 +39,6 @@ class _CardCameraPageState extends State<CardCameraPage> {
 
   bool get _showsMrz => widget.kind.hasMrz && widget.side != DocumentSide.front;
 
-  /// The MRZ sits right at the card's bottom edge, so on MRZ pages the photo
-  /// is cropped a little wider than the frame: a card held slightly low or
-  /// high in the frame then keeps its MRZ.
-  static const _mrzCropMargin = 0.06;
-
   @override
   void initState() {
     super.initState();
@@ -230,7 +225,7 @@ class _CardCameraPageState extends State<CardCameraPage> {
     try {
       await _focusBeforeCapture(frame);
       final photo = await controller.takePicture();
-      final cropFrame = _showsMrz ? frame.expanded(_mrzCropMargin) : frame;
+      final cropFrame = frame.expanded(CardFrame.captureMargin);
       final cropped = await IdLensServices.instance.imageOps.crop(
         photo.path,
         left: cropFrame.left,

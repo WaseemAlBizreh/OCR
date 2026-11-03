@@ -1,0 +1,203 @@
+import 'package:flutter_test/flutter_test.dart';
+import 'package:idlens/src/domain/document_framing.dart';
+
+/// A 400 x 300 photo of an ID card (85.6 / 54), cropped with the camera's
+/// margin: a well-placed card is about 357 x 225 pixels, 21 from the sides.
+const idAspect = 85.6 / 54;
+
+List<FramePoint> box(double l, double t, double r, double b) => [
+  (x: l, y: t),
+  (x: r, y: t),
+  (x: r, y: b),
+  (x: l, y: b),
+];
+
+FrameRegion region({
+  required double share,
+  required List<double> box,
+  List<double> contact = const [0, 0, 0, 0],
+}) => FrameRegion(
+  share: share,
+  left: box[0],
+  top: box[1],
+  right: box[2],
+  bottom: box[3],
+  contact: contact,
+);
+
+FrameVerdict? judge({List<FramePoint>? outline, FrameRegion? region}) =>
+    DocumentFraming.fromPhoto(
+      FrameMeasure(width: 400, height: 300, outline: outline, region: region),
+      aspectRatio: idAspect,
+    );
+
+void main() {
+  group('outline', () {
+    test('a card inside the frame is not cut off', () {
+      final verdict = judge(outline: box(21, 37, 378, 262))!;
+      expect(verdict.method, FrameMethod.outline);
+      expect(verdict.cutOff, isFalse);
+    });
+
+    test('a corner at the left edge is cut off on the left', () {
+      final verdict = judge(outline: box(2, 37, 359, 262))!;
+      expect(verdict.method, FrameMethod.outline);
+      expect(verdict.cutSides, [FrameSide.left]);
+    });
+
+    test('the corners can come in any order', () {
+      final verdict = judge(
+        outline: [
+          (x: 378.0, y: 262.0),
+          (x: 21.0, y: 37.0),
+          (x: 21.0, y: 262.0),
+          (x: 378.0, y: 37.0),
+        ],
+      )!;
+      expect(verdict.method, FrameMethod.outline);
+      expect(verdict.cutOff, isFalse);
+    });
+
+    test('a card turned a quarter is still the document', () {
+      // 142 x 225: the card upright in the photo.
+      final verdict = judge(outline: box(129, 37, 271, 262));
+      // Too small (27% of the photo) to be the document.
+      expect(verdict, isNull);
+      final bigger = DocumentFraming.fromPhoto(
+        FrameMeasure(width: 300, height: 400, outline: box(37, 21, 262, 378)),
+        aspectRatio: idAspect,
+      )!;
+      expect(bigger.method, FrameMethod.outline);
+      expect(bigger.cutOff, isFalse);
+    });
+
+    test('a shape unlike the document is ignored', () {
+      // Square: a printed box on the card, not the card.
+      expect(judge(outline: box(50, 20, 330, 280)), isNull);
+    });
+
+    test('an outline too small to be the document is ignored', () {
+      expect(judge(outline: box(150, 120, 250, 183)), isNull);
+    });
+
+    test('an ignored outline leaves the decision to the bright area', () {
+      final verdict = judge(
+        outline: box(50, 20, 330, 280),
+        region: region(share: 0.67, box: [21, 37, 378, 262]),
+      )!;
+      expect(verdict.method, FrameMethod.region);
+      expect(verdict.cutOff, isFalse);
+    });
+  });
+
+  group('bright area', () {
+    test('a card inside the frame is not cut off', () {
+      final verdict = judge(
+        region: region(share: 0.67, box: [21, 37, 378, 262]),
+      )!;
+      expect(verdict.method, FrameMethod.region);
+      expect(verdict.cutOff, isFalse);
+    });
+
+    test('a card moved left, lying along the left edge, is cut off', () {
+      final verdict = judge(
+        region: region(
+          share: 0.56,
+          box: [0, 37, 300, 262],
+          contact: [225, 0, 0, 0],
+        ),
+      )!;
+      expect(verdict.cutSides, [FrameSide.left]);
+    });
+
+    test('a card cut at the top and right is cut on both', () {
+      final verdict = judge(
+        region: region(
+          share: 0.6,
+          box: [60, 0, 400, 220],
+          contact: [0, 330, 210, 0],
+        ),
+      )!;
+      expect(verdict.cutSides, [FrameSide.top, FrameSide.right]);
+    });
+
+    test('a hand holding the card from the side is not a cut', () {
+      // The hand reaches the left edge over 40 pixels; the card is 225 high.
+      final verdict = judge(
+        region: region(
+          share: 0.7,
+          box: [0, 37, 378, 262],
+          contact: [40, 0, 0, 0],
+        ),
+      )!;
+      expect(verdict.cutOff, isFalse);
+    });
+
+    test('a light background covering the photo cannot tell', () {
+      expect(
+        judge(
+          region: region(
+            share: 0.97,
+            box: [0, 0, 400, 300],
+            contact: [300, 400, 300, 400],
+          ),
+        ),
+        isNull,
+      );
+    });
+
+    test('an area along three edges is the background and cannot tell', () {
+      expect(
+        judge(
+          region: region(
+            share: 0.8,
+            box: [0, 0, 400, 260],
+            contact: [260, 400, 260, 0],
+          ),
+        ),
+        isNull,
+      );
+    });
+
+    test('a tiny bright spot cannot tell', () {
+      expect(judge(region: region(share: 0.05, box: [0, 0, 60, 60])), isNull);
+    });
+  });
+
+  group('text', () {
+    test('text at one edge is enough to be cut off', () {
+      expect(DocumentFraming.fromText(1).cutOff, isTrue);
+      expect(DocumentFraming.fromText(1).method, FrameMethod.text);
+    });
+
+    test('text away from every edge is not cut off', () {
+      expect(DocumentFraming.fromText(0).cutOff, isFalse);
+    });
+  });
+
+  group('coverage', () {
+    test('is the share of the photo taken by the bright area', () {
+      const measure = FrameMeasure(
+        width: 400,
+        height: 300,
+        region: FrameRegion(
+          share: 0.3,
+          left: 100,
+          top: 75,
+          right: 300,
+          bottom: 225,
+          contact: [0, 0, 0, 0],
+        ),
+      );
+      expect(measure.coverage, closeTo(0.25, 1e-9));
+    });
+
+    test('is 1 when no area was found', () {
+      expect(const FrameMeasure(width: 400, height: 300).coverage, 1);
+    });
+  });
+
+  test('nothing found cannot tell', () {
+    expect(judge(), isNull);
+  });
+}

@@ -30,7 +30,22 @@ class ImageQuality {
   static const minSharpness = 60.0;
   static const minBrightness = 110.0;
   static const maxGlareShare = 0.20;
-  static const minDocumentCoverage = 0.6;
+
+  /// Below this share of the photo the document is too far away. The camera
+  /// crops 6% wider than the box on every side, so a document as wide as a
+  /// share `w` of the box covers about `(w / 1.12)²` of the photo:
+  ///
+  /// | Width in the box | Coverage | Result |
+  /// |---|---|---|
+  /// | 100% | 0.80 | accepted |
+  /// | 90% | 0.65 | accepted |
+  /// | 80% | 0.51 | accepted |
+  /// | 72% | 0.42 | the limit |
+  /// | 60% | 0.29 | too far |
+  ///
+  /// A dealer filling 80–90% of the box placed the document correctly; at
+  /// 60% it is too far to read well (both seen on a device).
+  static const minDocumentCoverage = 0.42;
 
   /// The most likely reason the document could not be read well (an issue
   /// code), or null when nothing stands out. A document far from the frame

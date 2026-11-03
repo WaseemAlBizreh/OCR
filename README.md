@@ -182,8 +182,12 @@ came from a server.
 - **Throws** a `ScanException` with the reason `imageUnreadable` if a file does
   not exist. Every other problem is reported on the result.
 - Your files are used as given and are never deleted by `dispose()`.
-- For the best result, crop the card to fill the image, with the MRZ sharp and
-  fully visible.
+- For the best result, crop the card to fill most of the image, with the MRZ
+  sharp and fully visible. Keep a thin strip of background (about 6% of the
+  card's size) on every side: that's how idlens tells a cut-off card from a
+  well-placed one. A photo cropped exactly to the card edges can only be
+  checked from its text, which is less reliable. The same applies to
+  `processPassport` and `processCivilRegistry`.
 
 ### `processPassport`
 

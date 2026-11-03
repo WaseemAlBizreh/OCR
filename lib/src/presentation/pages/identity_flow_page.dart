@@ -161,7 +161,7 @@ class _IdentityFlowPageState extends State<IdentityFlowPage> {
       PhotoCheck? check;
       if (side != null) {
         // A blurry or cut-off photo is reported before OCR runs, not after.
-        check = await _runner.checkPhoto(_originals[side]!);
+        check = await _runner.checkPhoto(_originals[side]!, widget.kind);
         final issue = check.issue;
         if (issue != null) {
           if (!mounted) return;

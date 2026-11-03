@@ -49,6 +49,89 @@ void main() {
     );
     expect(mrz, isNotNull);
     expect(mrz!.documentNumber, '008593666');
+    // A dropped filler is a misread, not a cut.
+    expect(mrz.cutOff, isFalse);
+  });
+
+  group('MRZ cut off by the photo', () {
+    test('a complete MRZ is not cut', () {
+      expect(parser.parseLines(sudanTd1, MrzFormat.td1)!.cutOff, isFalse);
+    });
+
+    test('a card past the right edge: name and check digit lost', () {
+      // Read on a device: the last character of every line is outside the
+      // photo, so MERGHANI became MERGHAN with no check digit to catch it.
+      final mrz = parser.parseText(
+        'IDSDN0085936669<<<<<<<<<<<<<<\n'
+        '9209231M2705169SDN<<<<<<<<<<<\n'
+        'OSMAN<<MERGHANI<MEKKI<MERGHAN\n',
+      )!;
+      expect(mrz.cutOff, isTrue);
+    });
+
+    test('only the name line cut is enough', () {
+      expect(
+        MrzParser.isCut([
+          sudanTd1[0],
+          sudanTd1[1],
+          'OSMAN<<MERGHANI<MEKKI<MERGHA',
+        ], MrzFormat.td1),
+        isTrue,
+      );
+    });
+
+    test('a lost composite digit is a cut', () {
+      expect(
+        MrzParser.isCut([
+          sudanTd1[0],
+          '9209231M2705169SDN<<<<<<<<<<<',
+          sudanTd1[2],
+        ], MrzFormat.td1),
+        isTrue,
+      );
+    });
+
+    test('a card past the left edge loses the document code', () {
+      expect(
+        MrzParser.isCut([
+          'SDN0085936669<<<<<<<<<<<<<<<',
+          '09231M2705169SDN<<<<<<<<<<<4',
+          'MAN<<MERGHANI<MEKKI<MERGHANI',
+        ], MrzFormat.td1),
+        isTrue,
+      );
+    });
+
+    test('a short name line ending in filler is a dropped filler', () {
+      expect(
+        MrzParser.isCut([
+          sudanTd1[0],
+          sudanTd1[1],
+          'OSMAN<<MERGHANI<MEKKI<<<<<<<',
+        ], MrzFormat.td1),
+        isFalse,
+      );
+    });
+
+    test('a passport whose composite digit is lost is cut', () {
+      expect(
+        MrzParser.isCut([
+          'P<UTOERIKSSON<<ANNA<MARIA<<<<<<<<<<<<<<<<<<<',
+          'L898902C36UTO7408122F1204159ZE184226B<<<<<<',
+        ], MrzFormat.td3),
+        isTrue,
+      );
+    });
+
+    test('a complete passport is not cut', () {
+      expect(
+        MrzParser.isCut([
+          'P<UTOERIKSSON<<ANNA<MARIA<<<<<<<<<<<<<<<<<<<',
+          'L898902C36UTO7408122F1204159ZE184226B<<<<<10',
+        ], MrzFormat.td3),
+        isFalse,
+      );
+    });
   });
 
   test('parses the ICAO TD3 specimen', () {
