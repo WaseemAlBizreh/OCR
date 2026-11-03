@@ -6,6 +6,7 @@ import 'package:idlens/src/data/ocr/paddle/passport/passport_line.dart';
 import 'package:idlens/src/data/ocr/paddle/passport/passport_ocr_lines.dart';
 import 'package:idlens/src/domain/document_kind.dart';
 import 'package:idlens/src/domain/mrz_data.dart';
+import 'package:idlens/src/domain/scan_deadline.dart';
 import 'package:opencv_dart/opencv.dart' as cv;
 
 class PassportMrzRead {
@@ -117,6 +118,9 @@ class PaddlePassportMrzReader {
       return text.isEmpty ? null : text;
     } on ReaderUnavailableException {
       // Not a bad read of this band: the whole scan can't use the reader.
+      rethrow;
+    } on ScanTimedOutException {
+      // Out of time: the steps left are skipped, not tried on another band.
       rethrow;
     } catch (_) {
       return null;

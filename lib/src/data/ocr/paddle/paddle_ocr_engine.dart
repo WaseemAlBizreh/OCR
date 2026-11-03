@@ -9,6 +9,7 @@ import 'package:idlens/src/data/ocr/card_text_recognizer.dart';
 import 'package:idlens/src/data/ocr/paddle/ctc_decoder.dart';
 import 'package:idlens/src/data/ocr/paddle/db_postprocess.dart';
 import 'package:idlens/src/data/ocr/paddle/rtl_reorder.dart';
+import 'package:idlens/src/domain/scan_deadline.dart';
 import 'package:opencv_dart/opencv.dart' as cv;
 
 /// The detector, the recognizer and its decoder, loaded together.
@@ -103,11 +104,13 @@ class PaddleOcrEngine implements CardTextRecognizer {
   /// [detMaxSide] is the longest side the detector sees; a full A4 page needs
   /// more than a card to keep small print readable.
   ///
-  /// Throws [ReaderUnavailableException] when the models can't be loaded.
+  /// Throws [ReaderUnavailableException] when the models can't be loaded, and
+  /// [ScanTimedOutException] between lines once the read's time limit passed.
   Future<PaddleResult> recognize(
     String imagePath, {
     int detMaxSide = _detMaxSide,
   }) async {
+    ScanDeadline.check();
     final models = await _models();
 
     final image = await cv.imreadAsync(imagePath);
@@ -120,6 +123,7 @@ class PaddleOcrEngine implements CardTextRecognizer {
       final boxes = await _detect(models.det, image, detMaxSide);
       final lines = <PaddleLine>[];
       for (final box in boxes) {
+        ScanDeadline.check();
         final line = await _recognize(models, image, box);
         if (line != null) lines.add(line);
       }

@@ -21,7 +21,7 @@ import 'package:idlens/src/scan_runner.dart';
 ///
 /// A result is returned whenever at least one image was captured, even if
 /// reading failed, so the images can always be uploaded; check `status` and
-/// `issues` to decide how far to trust the fields.
+/// `issue` to decide how far to trust the fields.
 class IdLens {
   /// Creates a scanner. It holds no state: every instance shares the loaded
   /// models.
@@ -64,36 +64,47 @@ class IdLens {
   /// The files are used as given and are never deleted by `dispose()`. Throws
   /// [ScanException] with `imageUnreadable` when a file is missing; any other
   /// problem is reported on the result.
+  ///
+  /// [timeout] limits how long reading may take; null (the default) means no
+  /// limit. When it passes, the result is `failed` with `ScanIssue.timedOut`
+  /// and still has the images, and the work left is skipped. A step already
+  /// running inside the text reader finishes in the background first.
   Future<IdCardResult> processIdCard({
     required File front,
     required File back,
+    Duration? timeout,
     IdCardScanOptions options = const IdCardScanOptions(),
   }) async {
+    _requirePositive(timeout);
     await _requireReadable([front, back]);
     return ScanRunner().idCard({
       DocumentSide.front: front.path,
       DocumentSide.back: back.path,
-    });
+    }, timeout: timeout);
   }
 
-  /// Reads the [dataPage] photo of a passport, without any UI. Files and
-  /// errors are handled as in [processIdCard].
+  /// Reads the [dataPage] photo of a passport, without any UI. Files, errors
+  /// and [timeout] are handled as in [processIdCard].
   Future<PassportResult> processPassport({
     required File dataPage,
+    Duration? timeout,
     PassportScanOptions options = const PassportScanOptions(),
   }) async {
+    _requirePositive(timeout);
     await _requireReadable([dataPage]);
-    return ScanRunner().passport(dataPage.path);
+    return ScanRunner().passport(dataPage.path, timeout: timeout);
   }
 
   /// Reads the [page] photo of a civil registry certificate, without any UI.
-  /// Files and errors are handled as in [processIdCard].
+  /// Files, errors and [timeout] are handled as in [processIdCard].
   Future<CivilRegistryResult> processCivilRegistry({
     required File page,
+    Duration? timeout,
     CivilRegistryScanOptions options = const CivilRegistryScanOptions(),
   }) async {
+    _requirePositive(timeout);
     await _requireReadable([page]);
-    return ScanRunner().civilRegistry(page.path);
+    return ScanRunner().civilRegistry(page.path, timeout: timeout);
   }
 
   Future<Object?> _flow(
@@ -101,6 +112,7 @@ class IdLens {
     DocumentKind kind,
     ScanOptions options,
   ) async {
+    _requirePositive(options.timeout);
     final navigator = Navigator.of(context);
     if (await PlatformSetup.iosCameraUsageMissing()) {
       throw const ScanException(
@@ -119,6 +131,12 @@ class IdLens {
     final failure = exit.failure;
     if (exit.outcome == null && failure != null) throw failure;
     return exit.outcome;
+  }
+
+  static void _requirePositive(Duration? timeout) {
+    if (timeout != null && timeout <= Duration.zero) {
+      throw ArgumentError.value(timeout, 'timeout', 'must be positive');
+    }
   }
 
   Future<void> _requireReadable(List<File> files) async {

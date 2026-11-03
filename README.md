@@ -243,7 +243,36 @@ await const IdLens().scanIdCard(
 | Option | Default | What it does |
 |---|---|---|
 | `showTips` | `true` | Shows the page of photo tips before the camera. When `false`, the camera opens straight away. Only for the `scan...` methods. |
+| `timeout` | `null` | How long reading may take. When it passes, the user is offered "Try again". `null` means no limit. Only for the `scan...` methods: the `process...` methods take their own `timeout` (see [Time limit](#time-limit)). |
 | `requireValidMrz` | `false` | While the MRZ is missing, of the wrong document or its check digits fail, the user can only retake. When `false`, the user can continue and you decide what to do with the result. Only for the `scan...` methods, and not available for the certificate, which has no MRZ. |
+
+## Time limit
+
+Every method can stop a read that takes too long. Pass `timeout` to a
+`process...` method, or in the options of a `scan...` method. With no
+`timeout` (the default), a read has no limit.
+
+```dart
+final result = await const IdLens().processIdCard(
+  front: front,
+  back: back,
+  timeout: const Duration(seconds: 30),
+);
+
+if (result.issue == ScanIssue.timedOut) {
+  // Reading took too long. The photos are fine: show a message and offer to
+  // read them again, or let the user type the details.
+}
+```
+
+- When the time passes, the result comes back straight away: `failed`, with
+  `ScanIssue.timedOut` and the images. Nothing is thrown.
+- The steps left are skipped. A step already running inside the text reader
+  can't be interrupted, so it finishes in the background first.
+- idlens doesn't choose a value. Reading is slower on low-end phones, so a
+  limit that's too short makes every scan fail there. Start generous, log
+  `diagnostics['scanMs']` (how long each read took) and lower it from what you
+  see.
 
 ## Results
 
@@ -278,8 +307,8 @@ which fields should they look at? `status` answers the first, and
 switch (result.status) {
   case ScanStatus.failed:
     // Ask for a retake. result.issue says why, so you can word the message.
-    // For ScanIssue.readerUnavailable the photos are fine: offer to read the
-    // same files again instead.
+    // For ScanIssue.readerUnavailable and ScanIssue.timedOut the photos are
+    // fine: offer to read the same files again instead.
   case ScanStatus.incomplete:
     // The user left before every page was captured. Resume or start again.
   case ScanStatus.needsReview:
@@ -301,7 +330,7 @@ For a field in `fieldsToCheck`, the value tells you why it's there:
 |---|---|---|
 | `verified` | No issue, and `fieldsToCheck` is empty. For ID cards and passports, every MRZ check digit passed and the printed values agree with the MRZ. | `null` |
 | `needsReview` | The photo isn't clear, or at least one field is in `fieldsToCheck`. | `imageNotClear` or `null` |
-| `failed` | Wrong document, not in the frame, the text reader couldn't start, or processing failed. Also when nothing identifying was read: no MRZ on an ID card or passport, or none of a certificate's required fields. | Always set |
+| `failed` | Wrong document, not in the frame, the text reader couldn't start, reading took longer than `timeout`, or processing failed. Also when nothing identifying was read: no MRZ on an ID card or passport, or none of a certificate's required fields. | Always set |
 | `incomplete` | The user left before every page was captured. Nothing was read. | `null` |
 
 A civil registry certificate has no MRZ, so for it `verified` only means the
@@ -319,10 +348,12 @@ value is never an issue: that field goes in `fieldsToCheck` instead.
 | `documentNotInFrame` | The document is missing, too far away or cut off. | ✓ | ✓ | ✓ | `failed` |
 | `processingFailed` | An unexpected error while reading. The images are still returned. | ✓ | ✓ | ✓ | `failed` |
 | `readerUnavailable` | idlens couldn't start its text reader on this phone, for example with too little free storage. The photos are fine: offer to read the same files again rather than a retake. The next read loads the reader again. | ✓ | ✓ | ✓ | `failed` |
+| `timedOut` | Reading took longer than the `timeout` you passed. The photos are fine: offer to read them again. | ✓ | ✓ | ✓ | `failed` |
 | `imageNotClear` | The photo is too dark, blurry or has glare. Also given when the document is in the frame but its MRZ couldn't be read, or a certificate has none of its required fields. | ✓ | ✓ | ✓ | `needsReview`, or `failed` when nothing identifying was read |
 
 An ID card has two photos, so `issue` is the more serious of the two:
-`wrongDocument`, then `readerUnavailable`, then `processingFailed`, then
+`wrongDocument`, then `readerUnavailable`, then `timedOut`, then
+`processingFailed`, then
 `documentNotInFrame`, then `imageNotClear`.
 
 `issueSides` says which photos to retake, so the user doesn't have to retake a
@@ -336,7 +367,7 @@ good one:
 | No MRZ was found and no photo check failed | The MRZ page (`back`, `dataPage`), or the certificate `page` |
 | `wrongDocument` | Every page |
 | A passport or certificate photo problem | Its only page |
-| No issue, `processingFailed` or `readerUnavailable` | Empty: no photo is to blame |
+| No issue, `processingFailed`, `readerUnavailable` or `timedOut` | Empty: no photo is to blame |
 
 ```dart
 for (final side in result.issueSides) {

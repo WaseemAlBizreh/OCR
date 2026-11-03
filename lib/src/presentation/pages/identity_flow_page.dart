@@ -180,15 +180,18 @@ class _IdentityFlowPageState extends State<IdentityFlowPage> {
           _originals,
           temporary: true,
           frontCheck: check,
+          timeout: widget.options.timeout,
         ),
         DocumentKind.passport => await _runner.passport(
           _originals[DocumentSide.dataPage]!,
           temporary: true,
+          timeout: widget.options.timeout,
         ),
         DocumentKind.civilRegistryCertificate => await _runner.civilRegistry(
           _originals[DocumentSide.page]!,
           temporary: true,
           pageCheck: check,
+          timeout: widget.options.timeout,
         ),
       };
       if (!mounted) return;

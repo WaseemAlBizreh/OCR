@@ -16,6 +16,7 @@ import 'package:idlens/src/domain/document_kind.dart';
 import 'package:idlens/src/domain/identity_scan_result.dart';
 import 'package:idlens/src/domain/image_quality.dart';
 import 'package:idlens/src/domain/mrz_validator.dart';
+import 'package:idlens/src/domain/scan_deadline.dart';
 import 'package:idlens/src/domain/scan_issue.dart';
 import 'package:idlens/src/services.dart';
 
@@ -118,9 +119,28 @@ class ScanRunner {
     };
   }
 
+  /// With a [timeout], a read still running when it passes returns `failed`
+  /// with [ScanIssue.timedOut] and the images; the work left is skipped.
   Future<IdCardResult> idCard(
     Map<DocumentSide, String> paths, {
     bool temporary = false,
+    PhotoCheck? frontCheck,
+    Duration? timeout,
+  }) => ScanDeadline.run(
+    timeout,
+    () => _idCard(paths, temporary: temporary, frontCheck: frontCheck),
+    () => IdCardResult(
+      status: ScanStatus.failed,
+      issue: ScanIssue.timedOut,
+      images: _images(DocumentKind.sudanId, paths, temporary),
+      diagnostics: _timedOutAfter(timeout!),
+      scannedAt: DateTime.now(),
+    ),
+  );
+
+  Future<IdCardResult> _idCard(
+    Map<DocumentSide, String> paths, {
+    required bool temporary,
     PhotoCheck? frontCheck,
   }) async {
     final images = _images(DocumentKind.sudanId, paths, temporary);
@@ -129,6 +149,7 @@ class ScanRunner {
       final front =
           frontCheck ??
           await checkPhoto(paths[DocumentSide.front]!, DocumentKind.sudanId);
+      ScanDeadline.check();
       final result = await _services.identityScanService.scan(
         kind: DocumentKind.sudanId,
         imagePaths: paths,
@@ -140,6 +161,7 @@ class ScanRunner {
         parseBack: _paddleParser.parseBack,
         includeRawText: true,
       );
+      ScanDeadline.check();
       final judged = await _judge(
         result,
         DocumentKind.sudanId,
@@ -173,9 +195,28 @@ class ScanRunner {
     }
   }
 
+  /// [timeout] works as for [idCard].
   Future<PassportResult> passport(
     String dataPagePath, {
     bool temporary = false,
+    Duration? timeout,
+  }) => ScanDeadline.run(
+    timeout,
+    () => _passport(dataPagePath, temporary: temporary),
+    () => PassportResult(
+      status: ScanStatus.failed,
+      issue: ScanIssue.timedOut,
+      images: _images(DocumentKind.passport, {
+        DocumentSide.dataPage: dataPagePath,
+      }, temporary),
+      diagnostics: _timedOutAfter(timeout!),
+      scannedAt: DateTime.now(),
+    ),
+  );
+
+  Future<PassportResult> _passport(
+    String dataPagePath, {
+    required bool temporary,
   }) async {
     final images = _images(DocumentKind.passport, {
       DocumentSide.dataPage: dataPagePath,
@@ -183,6 +224,7 @@ class ScanRunner {
     final stopwatch = Stopwatch()..start();
     try {
       final result = await _services.passportScanService.scan(dataPagePath);
+      ScanDeadline.check();
       final judged = await _judge(result, DocumentKind.passport, dataPagePath);
       return PassportResult(
         status: judged.status,
@@ -211,9 +253,29 @@ class ScanRunner {
     }
   }
 
+  /// [timeout] works as for [idCard].
   Future<CivilRegistryResult> civilRegistry(
     String pagePath, {
     bool temporary = false,
+    PhotoCheck? pageCheck,
+    Duration? timeout,
+  }) => ScanDeadline.run(
+    timeout,
+    () => _civilRegistry(pagePath, temporary: temporary, pageCheck: pageCheck),
+    () => CivilRegistryResult(
+      status: ScanStatus.failed,
+      issue: ScanIssue.timedOut,
+      images: _images(DocumentKind.civilRegistryCertificate, {
+        DocumentSide.page: pagePath,
+      }, temporary),
+      diagnostics: _timedOutAfter(timeout!),
+      scannedAt: DateTime.now(),
+    ),
+  );
+
+  Future<CivilRegistryResult> _civilRegistry(
+    String pagePath, {
+    required bool temporary,
     PhotoCheck? pageCheck,
   }) async {
     final images = _images(DocumentKind.civilRegistryCertificate, {
@@ -223,7 +285,9 @@ class ScanRunner {
     try {
       const kind = DocumentKind.civilRegistryCertificate;
       final check = pageCheck ?? await checkPhoto(pagePath, kind);
+      ScanDeadline.check();
       final reading = await _services.civilRegistryScanService.scan(pagePath);
+      ScanDeadline.check();
       final readable = ScanReview.isReadable(
         kind: kind,
         fields: reading.fields,
@@ -270,12 +334,19 @@ class ScanRunner {
     }
   }
 
-  /// The issue for a read that threw: the text reader couldn't start, which
-  /// reading the same photos again may fix, or any other error.
-  static ScanIssue _failureIssue(Object error) =>
-      error is ReaderUnavailableException
-      ? ScanIssue.readerUnavailable
-      : ScanIssue.processingFailed;
+  /// The issue for a read that threw: the text reader couldn't start or the
+  /// time limit passed, which reading the same photos again may fix, or any
+  /// other error.
+  static ScanIssue _failureIssue(Object error) => switch (error) {
+    ReaderUnavailableException() => ScanIssue.readerUnavailable,
+    ScanTimedOutException() => ScanIssue.timedOut,
+    _ => ScanIssue.processingFailed,
+  };
+
+  static Map<String, dynamic> _timedOutAfter(Duration timeout) => {
+    'error': 'Timed out after ${timeout.inMilliseconds} ms',
+    'timeoutMs': timeout.inMilliseconds,
+  };
 
   /// The issue, fields to check and status of a document with an MRZ.
   /// [frontIssue] is the ID front's own photo problem, which comes first.

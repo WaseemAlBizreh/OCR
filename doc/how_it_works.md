@@ -33,6 +33,12 @@ photos ──► photo checks ──► MRZ stage ──► printed-text stage �
 7. **Result.** Fields, MRZ, issue, fields to check and the images are returned
    as one typed object. English warnings for logs are in `diagnostics`.
 
+**Time limit.** With a `timeout`, the whole read runs under one deadline
+(`ScanDeadline`). When it passes, the result returns at once as `failed` with
+`timedOut`, even if a native call is stuck. The text reader checks the
+deadline before each text line and between stages, so the read left behind
+stops at its next step instead of running to the end.
+
 ## What "verified" means
 
 | Status | Meaning |

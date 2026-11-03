@@ -40,6 +40,12 @@ class ScanNotice {
           'free up some storage or restart the app.',
       readAgain: true,
     ),
+    ScanIssue.timedOut => const ScanNotice(
+      'Reading took too long',
+      'Your photos are fine. Try again. If it keeps happening, close other '
+          'apps or restart the phone.',
+      readAgain: true,
+    ),
   };
 
   static const _mrzNotFound = ScanNotice(

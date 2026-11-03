@@ -24,6 +24,11 @@ enum ScanIssue {
   /// too little free storage. The photos are fine and are still returned.
   /// Reading the same photos again may work, with no retake needed.
   readerUnavailable,
+
+  /// Reading took longer than the `timeout` the app passed, so idlens stopped
+  /// it. The photos are fine and are still returned: reading them again may
+  /// be quicker, with no retake needed.
+  timedOut,
 }
 
 /// Picks the one [ScanIssue] to report for a photo.

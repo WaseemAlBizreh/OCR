@@ -66,6 +66,12 @@ text.
 - The built-in flow names the side in its dialog after a scan ("Back: Image
   not clear"). A problem on the ID back is no longer hidden when the user
   already chose "Use anyway" for the same problem on the front.
+- New optional `timeout` on every method: a parameter on `process...`, and in
+  the options of `scan...`. When it passes, the result is `failed` with the
+  new `ScanIssue.timedOut` and still has the images; nothing is thrown. The
+  steps left are skipped, so the read doesn't keep running to the end in the
+  background. `null` (the default) means no limit, as before. The built-in
+  flow offers "Try again" for it.
 - `diagnostics` has a new `framing` entry (and `frontFraming` for an ID card)
   saying how the framing was judged.
 

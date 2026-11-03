@@ -12,7 +12,7 @@ These bugs are in the `idlens` package ([`WaseemAlBizreh/OCR`](https://github.co
 | [I4](#i4-some-certificate-values-have-no-confidence-score) | Some certificate values have no confidence score | **Fixed by removing the score, not released** | Next release (breaking API change) |
 | [I5](#i5-a-cut-off-document-is-accepted) | A cut-off document is accepted | **Fixed, not released** (limits to check on real photos) | Next release |
 | [I6](#i6-issues-dont-say-which-side-of-the-id-caused-them) | Issues don't say which side of the ID caused them | **Fixed, not released** | Next release (adds `issueSides`) |
-| [I7](#i7-a-running-read-cant-be-cancelled) | A running read can't be cancelled | Low | Later |
+| [I7](#i7-a-running-read-cant-be-cancelled) | A running read can't be cancelled | **Fixed with a time limit, not released** | Next release (adds `timeout`) |
 | [I8](#i8-a-document-far-from-the-camera-can-be-accepted) | A document far from the camera can be accepted | High | 0.1.4 |
 | [I9](#i9-processcivilregistry-doesnt-flatten-the-page) | `processCivilRegistry` doesn't flatten the page | Low once I10 ships | 0.1.4 |
 | [I10](#i10-apps-have-to-build-their-own-camera) | Apps have to build their own camera, with no Arabic support | High, comes before the accuracy test | 0.1.4 |
@@ -634,7 +634,65 @@ Fill it from the existing front and back checks.
 
 ## I7. A running read can't be cancelled
 
-- [ ] Decided after measuring read times
+- [x] Fixed in idlens with a time limit instead of a cancel token (2026-11-03,
+      not committed or released)
+- [ ] Adopted in the app
+
+**Summary of the fix**
+
+The cancel token suggested below wasn't used. Read times can't be measured
+yet, and a token makes every app manage cancelling. Instead every method takes
+an optional time limit, and the app decides the value:
+
+| Method | Where the limit goes |
+|---|---|
+| `processIdCard`, `processPassport`, `processCivilRegistry` | `timeout:` parameter |
+| `scanIdCard`, `scanPassport`, `scanCivilRegistry` | `timeout` in the options |
+
+- `null` (the default) means no limit, so nothing changes for an app that
+  doesn't pass one. A zero or negative value throws `ArgumentError`.
+- When the limit passes, the result returns at once: `failed`, with the new
+  `ScanIssue.timedOut`, the images, and empty `issueSides` (the photos are
+  fine). Nothing is thrown, so the app handles it like any other issue.
+  `diagnostics['timeoutMs']` holds the limit.
+- The result returns on time even when a native call is stuck.
+- The work left behind stops too. The whole read runs under one deadline
+  (`domain/scan_deadline.dart`), which the Paddle reader checks before each
+  text line, and the runner between stages. A step already running inside the
+  native reader (one detector or recognizer run, or one ML Kit call) still
+  finishes first. The passport MRZ reader passes the timeout through instead
+  of trying the next band.
+- The built-in flow says "Reading took too long. Your photos are fine. Try
+  again. If it keeps happening, close other apps or restart the phone.", with
+  a "Try again" button that reads the same photos again.
+
+**Files changed:** new `domain/scan_deadline.dart`, `domain/scan_issue.dart`,
+`api/scan_review.dart` (issue order, `issueSides`), `api/scan_options.dart`,
+`idlens_scanner.dart`, `scan_runner.dart`, `paddle_ocr_engine.dart`,
+`passport/paddle_passport_mrz_reader.dart`, `presentation/scan_issue_text.dart`,
+`presentation/pages/identity_flow_page.dart`, the README (new "Time limit"
+section), `doc/how_it_works.md` and `CHANGELOG.md`.
+
+**How it was checked:** `flutter analyze` reports no issues for the package or
+the example. 39 tests pass in a scratch Dart package, including the new
+`test/scan_deadline_test.dart` (a stuck read returns on time, a read past its
+limit stops at its next check, no limit runs to the end) and new
+`scan_review_test.dart` cases. Nothing was tried on a phone.
+
+**Still needed in the MTN app**
+
+- Pass a `timeout` to `processIdCard`, `processPassport` and
+  `processCivilRegistry`. Start generous (for example 30 seconds), because a
+  limit that's too short makes every scan fail on a slow phone.
+- On `ScanIssue.timedOut`, show a toast or dialog ("Reading took too long")
+  and offer to read the same photos again or enter the details manually. Don't
+  ask for a retake: the photos are fine.
+- Log `diagnostics['scanMs']` from real scans, and lower the limit once real
+  read times are known.
+- This replaces the app's own timeout in B6. Close B18 and B6 in
+  `SIM_REGISTRATION_OCR_BUGS.md` after checking on a phone.
+
+**The original report**
 
 **What happens**
 

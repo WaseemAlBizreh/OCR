@@ -242,6 +242,7 @@ void main() {
         ScanIssue.documentNotInFrame,
         ScanIssue.processingFailed,
         ScanIssue.readerUnavailable,
+        ScanIssue.timedOut,
       ]) {
         expect(status(issue), ScanStatus.failed, reason: issue.name);
       }
@@ -334,6 +335,7 @@ void main() {
         null,
         ScanIssue.processingFailed,
         ScanIssue.readerUnavailable,
+        ScanIssue.timedOut,
       ]) {
         expect(
           ScanReview.issueSides(
@@ -345,5 +347,20 @@ void main() {
         );
       }
     });
+  });
+
+  test('a timed-out read is failed, and is worse than a photo problem', () {
+    expect(
+      ScanReview.statusFor(
+        issue: ScanIssue.timedOut,
+        readable: true,
+        fieldsToCheck: const [],
+      ),
+      ScanStatus.failed,
+    );
+    expect(
+      ScanReview.worse(ScanIssue.imageNotClear, ScanIssue.timedOut),
+      ScanIssue.timedOut,
+    );
   });
 }

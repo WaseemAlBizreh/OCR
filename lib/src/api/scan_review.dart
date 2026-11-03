@@ -86,9 +86,10 @@ class ScanReview {
   static const _severity = {
     ScanIssue.wrongDocument: 0,
     ScanIssue.readerUnavailable: 1,
-    ScanIssue.processingFailed: 2,
-    ScanIssue.documentNotInFrame: 3,
-    ScanIssue.imageNotClear: 4,
+    ScanIssue.timedOut: 2,
+    ScanIssue.processingFailed: 3,
+    ScanIssue.documentNotInFrame: 4,
+    ScanIssue.imageNotClear: 5,
   };
 
   /// The pages to retake for [issue], in document order: each page whose own
@@ -102,7 +103,10 @@ class ScanReview {
     Map<DocumentSide, ScanIssue?> photos = const {},
   }) {
     switch (issue) {
-      case null || ScanIssue.processingFailed || ScanIssue.readerUnavailable:
+      case null ||
+          ScanIssue.processingFailed ||
+          ScanIssue.readerUnavailable ||
+          ScanIssue.timedOut:
         return const [];
       case ScanIssue.wrongDocument:
         return kind.sides;
@@ -121,7 +125,7 @@ class ScanReview {
       issue ?? (readable ? null : ScanIssue.imageNotClear);
 
   /// - `failed`: the document is unreadable, wrong, out of the frame, the
-  ///   reader couldn't start, or reading crashed.
+  ///   reader couldn't start, reading took too long, or reading crashed.
   /// - `needsReview`: the photo is not clear, or a field needs checking.
   /// - `verified`: neither.
   static ScanStatus statusFor({
