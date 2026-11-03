@@ -731,7 +731,7 @@ Future<IdCardResult> processIdCard({
 ## I8. A document far from the camera can be accepted
 
 - [ ] Coverage values collected from real far photos
-- [x] Fixed in idlens (2026-11-03, not committed or released)
+- [x] Fixed in idlens (2026-11-03, committed in 02b918f, not released)
 - [ ] Re-tested in the app
 
 **Summary of the fix**
@@ -852,7 +852,7 @@ A small document means less detail for reading and a poor image for the backend'
 
 ## I9. `processCivilRegistry` doesn't flatten the page
 
-- [x] Fixed in idlens (2026-11-03, not committed or released)
+- [x] Fixed in idlens (2026-11-03, committed in a533391, not released)
 - [ ] Adopted in the app
 
 **Summary of the fix**
