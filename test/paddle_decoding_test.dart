@@ -1,3 +1,5 @@
+import 'dart:typed_data';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:idlens/src/data/ocr/paddle/ctc_decoder.dart';
 import 'package:idlens/src/data/ocr/paddle/rtl_reorder.dart';
@@ -5,6 +7,10 @@ import 'package:idlens/src/data/ocr/paddle/rtl_reorder.dart';
 List<double> _step(int classes, int hot, [double p = 0.9]) => [
   for (var i = 0; i < classes; i++) i == hot ? p : 0.01,
 ];
+
+/// The steps flattened the way the recognizer returns them.
+Float32List _flat(List<List<double>> steps) =>
+    Float32List.fromList([for (final step in steps) ...step]);
 
 void main() {
   group('CtcDecoder', () {
@@ -22,19 +28,20 @@ void main() {
         _step(4, 2),
         _step(4, 3),
       ];
-      final r = decoder.greedy(logits);
+      final r = decoder.greedy(_flat(logits), classes: 4);
       expect(r.text, 'aabc');
-      expect(r.confidence, closeTo(0.9, 1e-9));
+      // 0.9 stored as a 32-bit float, as the recognizer returns it.
+      expect(r.confidence, closeTo(0.9, 1e-6));
     });
 
     test('all blanks decode to empty text with zero confidence', () {
-      final r = decoder.greedy([_step(4, 0), _step(4, 0)]);
+      final r = decoder.greedy(_flat([_step(4, 0), _step(4, 0)]), classes: 4);
       expect(r.text, '');
       expect(r.confidence, 0);
     });
 
     test('ignores class indexes outside the dictionary', () {
-      expect(decoder.greedy([_step(6, 5)]).text, '');
+      expect(decoder.greedy(_flat([_step(6, 5)]), classes: 6).text, '');
     });
   });
 

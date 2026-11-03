@@ -1,3 +1,4 @@
+import 'dart:isolate';
 import 'dart:math' as math;
 import 'dart:typed_data';
 
@@ -109,7 +110,7 @@ class PaddleOcrEngine implements CardTextRecognizer {
   }) async {
     final models = await _models();
 
-    final image = cv.imread(imagePath);
+    final image = await cv.imreadAsync(imagePath);
     if (image.isEmpty) {
       image.dispose();
       throw StateError('Failed to read image: $imagePath');
@@ -139,28 +140,23 @@ class PaddleOcrEngine implements CardTextRecognizer {
     final w = math.max(32, (image.cols * scale / 32).round() * 32);
     final h = math.max(32, (image.rows * scale / 32).round() * 32);
 
-    final resized = cv.resize(image, (w, h), interpolation: cv.INTER_LINEAR);
-    final input = Float32List(3 * h * w);
+    final resized = await cv.resizeAsync(image, (
+      w,
+      h,
+    ), interpolation: cv.INTER_LINEAR);
+    final Uint8List pixels;
     try {
-      final px = resized.data; // BGR, interleaved
-      const mean = [0.485, 0.456, 0.406];
-      const std = [0.229, 0.224, 0.225];
-      final plane = h * w;
-      for (var i = 0; i < plane; i++) {
-        for (var c = 0; c < 3; c++) {
-          input[c * plane + i] = (px[i * 3 + c] / 255 - mean[c]) / std[c];
-        }
-      }
+      // A copy, so the worker isolate can take it after the Mat is freed.
+      pixels = Uint8List.fromList(resized.data); // BGR, interleaved
     } finally {
       resized.dispose();
     }
+    final input = await _inBackground(_detectorInput, pixels, w * h);
 
     final tensor = await OrtValue.fromList(input, [1, 3, h, w]);
     final outputs = await det.run({det.inputNames.first: tensor});
     final out = outputs.values.first;
-    final probs = Float32List.fromList([
-      for (final v in await out.asFlattenedList()) (v as num).toDouble(),
-    ]);
+    final probs = _floats(await out.asFlattenedList());
     await tensor.dispose();
     for (final value in outputs.values) {
       await value.dispose();
@@ -169,11 +165,42 @@ class PaddleOcrEngine implements CardTextRecognizer {
     // Output is [1, 1, h, w]; use its own spatial size.
     final mapH = out.shape.length >= 2 ? out.shape[out.shape.length - 2] : h;
     final mapW = out.shape.last;
-    return _post
-        .boxes(probs, mapW, mapH)
+    final boxes = await _inBackground(_boxes, probs, (mapW, mapH));
+    return boxes
         .map((b) => b.scaled(image.cols / mapW, image.rows / mapH))
         .toList();
   }
+
+  /// Runs [work] on a short-lived worker isolate. The detector's input and its
+  /// output map each take about a million steps, which would stop the app's
+  /// frames if run on the isolate that called the scan.
+  ///
+  /// Static, so the closure sent to the worker holds only [a] and [b], never
+  /// a native `Mat` from the caller's scope.
+  static Future<R> _inBackground<R, A, B>(R Function(A, B) work, A a, B b) =>
+      Isolate.run(() => work(a, b));
+
+  static List<TextBox> _boxes(Float32List map, (int, int) size) =>
+      _post.boxes(map, size.$1, size.$2);
+
+  /// BGR pixels to the detector's normalised, channel-first input.
+  static Float32List _detectorInput(Uint8List px, int plane) {
+    const mean = [0.485, 0.456, 0.406];
+    const std = [0.229, 0.224, 0.225];
+    final input = Float32List(3 * plane);
+    for (var i = 0; i < plane; i++) {
+      for (var c = 0; c < 3; c++) {
+        input[c * plane + i] = (px[i * 3 + c] / 255 - mean[c]) / std[c];
+      }
+    }
+    return input;
+  }
+
+  /// A model output as floats. The plugin already returns a `Float32List` for
+  /// float tensors on Android and iOS, so this normally copies nothing.
+  static Float32List _floats(List<dynamic> values) => values is Float32List
+      ? values
+      : Float32List.fromList([for (final v in values) (v as num).toDouble()]);
 
   // ---- recognition --------------------------------------------------------
 
@@ -200,7 +227,7 @@ class PaddleOcrEngine implements CardTextRecognizer {
       // with more digits wins.
       var best = first;
       if (first != null && _digits.hasMatch(first.text)) {
-        final enhanced = _clahe(region);
+        final enhanced = await _clahe(region);
         try {
           final second = await _readLine(models, enhanced);
           if (second != null &&
@@ -220,15 +247,15 @@ class PaddleOcrEngine implements CardTextRecognizer {
   int _digitCount(String text) => _digits.allMatches(text).length;
 
   /// Contrast-limited adaptive histogram equalisation on the lightness channel.
-  cv.Mat _clahe(cv.Mat bgr) {
-    final lab = cv.cvtColor(bgr, cv.COLOR_BGR2Lab);
-    final channels = cv.split(lab);
+  Future<cv.Mat> _clahe(cv.Mat bgr) async {
+    final lab = await cv.cvtColorAsync(bgr, cv.COLOR_BGR2Lab);
+    final channels = await cv.splitAsync(lab);
     final clahe = cv.CLAHE(2.0, (4, 4));
-    final lightness = clahe.apply(channels[0]);
-    final merged = cv.merge(
+    final lightness = await clahe.applyAsync(channels[0]);
+    final merged = await cv.mergeAsync(
       cv.VecMat.fromList([lightness, channels[1], channels[2]]),
     );
-    final result = cv.cvtColor(merged, cv.COLOR_Lab2BGR);
+    final result = await cv.cvtColorAsync(merged, cv.COLOR_Lab2BGR);
     for (final m in [lab, lightness, merged]) {
       m.dispose();
     }
@@ -246,7 +273,7 @@ class PaddleOcrEngine implements CardTextRecognizer {
         .round()
         .clamp(16, _recMaxWidth)
         .toInt();
-    final resized = cv.resize(line, (
+    final resized = await cv.resizeAsync(line, (
       targetW,
       _recHeight,
     ), interpolation: cv.INTER_CUBIC);
@@ -267,23 +294,14 @@ class PaddleOcrEngine implements CardTextRecognizer {
     final tensor = await OrtValue.fromList(input, [1, 3, _recHeight, targetW]);
     final outputs = await models.rec.run({models.rec.inputNames.first: tensor});
     final out = outputs.values.first;
-    final flat = await out.asFlattenedList();
+    final flat = _floats(await out.asFlattenedList());
     final shape = out.shape; // [1, T, classes]
     await tensor.dispose();
     for (final value in outputs.values) {
       await value.dispose();
     }
 
-    final steps = shape[shape.length - 2];
-    final classes = shape.last;
-    final logits = [
-      for (var t = 0; t < steps; t++)
-        [
-          for (var k = 0; k < classes; k++)
-            (flat[t * classes + k] as num).toDouble(),
-        ],
-    ];
-    final decoded = models.decoder.greedy(logits);
+    final decoded = models.decoder.greedy(flat, classes: shape.last);
     if (decoded.confidence < _minConfidence) return null;
 
     final text = ParserUtils.normalizeArabic(

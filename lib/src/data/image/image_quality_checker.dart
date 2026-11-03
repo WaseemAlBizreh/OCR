@@ -19,13 +19,13 @@ class ImageQualityChecker {
         top: 1 - kind.mrzBandFraction,
         label: 'quality_band',
       );
-      final quality = _measure(bandPath);
+      final quality = await _measure(bandPath);
       if (quality == null) return null;
       return ImageQuality(
         sharpness: quality.sharpness,
         brightness: quality.brightness,
         glareShare: quality.glareShare,
-        documentCoverage: _coverage(imagePath),
+        documentCoverage: await _coverage(imagePath),
       );
     } catch (_) {
       return null;
@@ -39,8 +39,8 @@ class ImageQualityChecker {
   /// text-dense tiles only (blank paper has no edges even in a sharp photo),
   /// and how much of the frame the document covers. Glare is not judged: a
   /// white page would always look like glare.
-  ImageQuality? checkWhole(String imagePath) {
-    final image = cv.imread(imagePath, flags: cv.IMREAD_GRAYSCALE);
+  Future<ImageQuality?> checkWhole(String imagePath) async {
+    final image = await cv.imreadAsync(imagePath, flags: cv.IMREAD_GRAYSCALE);
     if (image.isEmpty) {
       image.dispose();
       return null;
@@ -48,11 +48,11 @@ class ImageQualityChecker {
     final mats = <cv.Mat>[image];
     try {
       final scale = ImageQuality.bandWidth / image.cols;
-      final page = cv.resize(image, (
+      final page = await cv.resizeAsync(image, (
         ImageQuality.bandWidth,
         (image.rows * scale).round().clamp(1, 1 << 20),
       ), interpolation: scale < 1 ? cv.INTER_AREA : cv.INTER_LINEAR);
-      final laplacian = cv.laplacian(page, cv.MatType.CV_64F);
+      final laplacian = await cv.laplacianAsync(page, cv.MatType.CV_64F);
       mats.addAll([page, laplacian]);
 
       const grid = 8;
@@ -82,7 +82,7 @@ class ImageQualityChecker {
         sharpness: sharpness,
         brightness: page.mean().val1,
         glareShare: 0,
-        documentCoverage: _coverage(imagePath),
+        documentCoverage: await _coverage(imagePath),
       );
     } finally {
       for (final m in mats) {
@@ -94,8 +94,8 @@ class ImageQualityChecker {
   /// Share of the frame taken by the largest bright region (the document on
   /// a darker background). 1 when no clear region is found, so an unusual
   /// background never makes a good photo look like a far one.
-  double _coverage(String imagePath) {
-    final image = cv.imread(imagePath, flags: cv.IMREAD_GRAYSCALE);
+  Future<double> _coverage(String imagePath) async {
+    final image = await cv.imreadAsync(imagePath, flags: cv.IMREAD_GRAYSCALE);
     if (image.isEmpty) {
       image.dispose();
       return 1;
@@ -103,22 +103,22 @@ class ImageQualityChecker {
     final mats = <cv.Mat>[image];
     try {
       final scale = 400 / image.cols;
-      final small = cv.resize(image, (
+      final small = await cv.resizeAsync(image, (
         400,
         (image.rows * scale).round().clamp(1, 1 << 20),
       ), interpolation: cv.INTER_AREA);
-      final blurred = cv.gaussianBlur(small, (7, 7), 0);
-      final (_, binary) = cv.threshold(
+      final blurred = await cv.gaussianBlurAsync(small, (7, 7), 0);
+      final (_, binary) = await cv.thresholdAsync(
         blurred,
         0,
         255,
         cv.THRESH_BINARY | cv.THRESH_OTSU,
       );
       final kernel = cv.getStructuringElement(cv.MORPH_RECT, (15, 15));
-      final closed = cv.morphologyEx(binary, cv.MORPH_CLOSE, kernel);
+      final closed = await cv.morphologyExAsync(binary, cv.MORPH_CLOSE, kernel);
       mats.addAll([small, blurred, binary, kernel, closed]);
 
-      final (contours, hierarchy) = cv.findContours(
+      final (contours, hierarchy) = await cv.findContoursAsync(
         closed,
         cv.RETR_EXTERNAL,
         cv.CHAIN_APPROX_SIMPLE,
@@ -142,8 +142,8 @@ class ImageQualityChecker {
     }
   }
 
-  ImageQuality? _measure(String bandPath) {
-    final image = cv.imread(bandPath, flags: cv.IMREAD_GRAYSCALE);
+  Future<ImageQuality?> _measure(String bandPath) async {
+    final image = await cv.imreadAsync(bandPath, flags: cv.IMREAD_GRAYSCALE);
     if (image.isEmpty) {
       image.dispose();
       return null;
@@ -152,20 +152,25 @@ class ImageQualityChecker {
     try {
       // Same width for every photo so the sharpness numbers are comparable.
       final scale = ImageQuality.bandWidth / image.cols;
-      final band = cv.resize(image, (
+      final band = await cv.resizeAsync(image, (
         ImageQuality.bandWidth,
         (image.rows * scale).round().clamp(1, 1 << 20),
       ), interpolation: scale < 1 ? cv.INTER_AREA : cv.INTER_LINEAR);
       mats.add(band);
 
-      final laplacian = cv.laplacian(band, cv.MatType.CV_64F);
+      final laplacian = await cv.laplacianAsync(band, cv.MatType.CV_64F);
       mats.add(laplacian);
       final (_, laplacianStd) = cv.meanStdDev(laplacian);
       final sharpness = laplacianStd.val1 * laplacianStd.val1;
 
       final brightness = band.mean().val1;
 
-      final (_, bright) = cv.threshold(band, 250, 255, cv.THRESH_BINARY);
+      final (_, bright) = await cv.thresholdAsync(
+        band,
+        250,
+        255,
+        cv.THRESH_BINARY,
+      );
       mats.add(bright);
       final glareShare = cv.countNonZero(bright) / (band.rows * band.cols);
 

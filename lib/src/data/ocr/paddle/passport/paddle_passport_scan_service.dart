@@ -45,7 +45,7 @@ class PaddlePassportScanService {
       dataPageFields: printed.fields,
       mrz: mrz,
       mrzAttempts: mrzRead.attempts,
-      frameTouchedSides: _touchedSides(dataPagePath, text.lines),
+      frameTouchedSides: await _touchedSides(dataPagePath, text.lines),
       imagePaths: {DocumentSide.dataPage: dataPagePath},
       rawText: {DocumentSide.dataPage: text.flat},
       warnings: warnings.toSet().toList(),
@@ -55,8 +55,11 @@ class PaddlePassportScanService {
 
   /// Edges of the photo that printed text runs up to; null when the photo
   /// cannot be read.
-  static int? _touchedSides(String imagePath, List<PassportLine> lines) {
-    final image = cv.imread(imagePath);
+  static Future<int?> _touchedSides(
+    String imagePath,
+    List<PassportLine> lines,
+  ) async {
+    final image = await cv.imreadAsync(imagePath);
     try {
       if (image.isEmpty) return null;
       return PassportFrameCheck.touchedSides(

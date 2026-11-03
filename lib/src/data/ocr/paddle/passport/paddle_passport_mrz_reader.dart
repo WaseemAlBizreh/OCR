@@ -127,15 +127,15 @@ class PaddlePassportMrzReader {
   /// Greyscale + contrast-limited histogram equalisation, written next to the
   /// band. Returns null when the image cannot be processed.
   Future<String?> _enhance(String bandPath) async {
-    final image = cv.imread(bandPath);
+    final image = await cv.imreadAsync(bandPath);
     if (image.isEmpty) {
       image.dispose();
       return null;
     }
     final outputPath = bandPath.replaceFirst(RegExp(r'\.png$'), '_enh.png');
-    final gray = cv.cvtColor(image, cv.COLOR_BGR2GRAY);
+    final gray = await cv.cvtColorAsync(image, cv.COLOR_BGR2GRAY);
     final clahe = cv.CLAHE(2.0, (8, 8));
-    final equalised = clahe.apply(gray);
+    final equalised = await clahe.applyAsync(gray);
     try {
       return await cv.imwriteAsync(outputPath, equalised) ? outputPath : null;
     } finally {

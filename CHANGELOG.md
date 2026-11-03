@@ -34,6 +34,11 @@ text.
 - Fixed: a text reader that failed to load made every later scan fail until
   the app restarted. A failed load is now retried on the next read, anything
   partly loaded is closed, and scans that start together share one load.
+- Scans no longer hold up the app's frames as much. Image decoding, resizing
+  and contrast work run on OpenCV's background threads; the detector's input
+  and its text-box search run on a short-lived worker isolate; the
+  recognizer's output is read as a float list instead of being copied value by
+  value. Results are the same for the same photo, and no API changes.
 
 ## 0.1.3
 

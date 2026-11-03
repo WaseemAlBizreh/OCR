@@ -15,7 +15,7 @@ class FrameEdgeChecker {
   Future<int> touchedSides(String imagePath) async {
     final page = await _mlkit.read(imagePath);
     if (page == null) return 0;
-    final image = cv.imread(imagePath);
+    final image = await cv.imreadAsync(imagePath);
     try {
       if (image.isEmpty) return 0;
       return PassportFrameCheck.touchedSides(

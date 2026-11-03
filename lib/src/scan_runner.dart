@@ -46,7 +46,7 @@ class ScanRunner {
   /// Clarity and framing of a photo that has no MRZ to read (an ID front, a
   /// certificate), or of any whole photo.
   Future<PhotoCheck> checkPhoto(String path) async {
-    final quality = _services.imageQualityChecker.checkWhole(path);
+    final quality = await _services.imageQualityChecker.checkWhole(path);
     final touched = await _services.frameEdgeChecker.touchedSides(path);
     final issue = ScanIssueResolver.resolve(
       recognizedFields: 0,

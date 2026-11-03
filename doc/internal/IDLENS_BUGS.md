@@ -8,7 +8,7 @@ These bugs are in the `idlens` package ([`WaseemAlBizreh/OCR`](https://github.co
 |---|---|---|---|
 | [I1](#i1-a-missing-field-is-treated-as-a-value-to-review) | A missing field is treated as a value to review | **Fixed, not released** | Next release (breaking API change) |
 | [I2](#i2-a-model-that-fails-to-load-breaks-every-later-scan) | A model that fails to load breaks every later scan | **Fixed, not released** | Next release |
-| [I3](#i3-image-work-runs-on-the-ui-isolate) | Image work runs on the UI isolate | Measure first | 0.1.4 if it freezes |
+| [I3](#i3-image-work-runs-on-the-ui-isolate) | Image work runs on the UI isolate | **Fixed, not released** | Next release |
 | [I4](#i4-some-certificate-values-have-no-confidence-score) | Some certificate values have no confidence score | Medium | 0.1.4 |
 | [I5](#i5-an-out-of-frame-id-front-fails-the-whole-scan) | An out-of-frame ID front fails the whole scan | Medium | 0.2.0 |
 | [I6](#i6-issues-dont-say-which-side-of-the-id-caused-them) | Issues don't say which side of the ID caused them | Low | 0.2.0 |
@@ -279,8 +279,47 @@ Future<void> _load() async {
 
 ## I3. Image work runs on the UI isolate
 
+- [x] Fixed in idlens (2026-11-03, not committed or released), without
+      measuring first: the fix is cheap and gives the same results
 - [ ] Measured on a low-end phone
-- [ ] Fixed in idlens, if needed
+- [ ] Adopted in the app
+
+**Summary of the fix**
+
+Reading the code showed that the model runs were never the problem:
+`flutter_onnxruntime` already runs inference on a background native task queue
+on Android and iOS. Three other kinds of work ran on the calling isolate:
+
+| Work | Before | Now |
+|---|---|---|
+| OpenCV: decoding the full photo (up to 4 times a scan), resize, colour conversion, CLAHE, blur, edges, contours, page warp | Synchronous calls | `*Async` calls, which run on OpenCV's native threads |
+| Recognizer output, about 150,000 values per text line (749 classes × up to 200 steps), read twice for lines with digits | Copied value by value into `List<List<double>>` | Read as the `Float32List` the plugin returns; `CtcDecoder.greedy` takes the flat list |
+| Detector input (about 1.7 million pixel values) and the text-box search on its output map | Dart loops on the calling isolate | Run on a short-lived worker isolate (`Isolate.run`) |
+
+- The arithmetic is the same, so results don't change for the same photo. The
+  `process*` and `scan*` signatures don't change.
+- The worker closure is made in a static helper, so it never holds a native
+  OpenCV `Mat` and can always be sent to the worker.
+- The per-line pixel loop for the recognizer (48 × up to 1,600 pixels) stays on
+  the calling isolate. It is short, and the model run between lines lets frames
+  draw.
+
+**Files changed:** `paddle_ocr_engine.dart`, `ctc_decoder.dart`,
+`image/image_ops.dart`, `image/image_quality_checker.dart`,
+`image/frame_edge_checker.dart`, `passport/paddle_passport_mrz_reader.dart`,
+`passport/paddle_passport_scan_service.dart`, `scan_runner.dart`,
+`test/paddle_decoding_test.dart`, `CHANGELOG.md`.
+
+**How it was checked:**
+- `flutter analyze` reports no issues for the package or the example.
+- In a scratch Dart package (`flutter test` can't build OpenCV on this Mac):
+  the decoding tests pass; the new decoder gives bit-identical text and
+  confidence to the old one on 50 random 749-class outputs; and text boxes
+  computed on a worker isolate equal boxes computed in place.
+- Nothing was run on a phone. The OpenCV `*Async` calls and the worker isolate
+  run only on a device. Check there that scans still read the same values and
+  that the "Reading document..." spinner keeps moving on a low-end Android
+  phone.
 
 **What happens**
 

@@ -22,7 +22,7 @@ class ImageOps {
     int minWidth = 0,
     String label = 'crop',
   }) async {
-    var mat = cv.imread(inputPath);
+    var mat = await cv.imreadAsync(inputPath);
     if (mat.isEmpty) {
       mat.dispose();
       throw StateError('Failed to read image: $inputPath');
@@ -31,7 +31,7 @@ class ImageOps {
     final toDispose = <cv.Mat>[mat];
     try {
       if (portrait && mat.cols > mat.rows) {
-        mat = cv.rotate(mat, cv.ROTATE_90_CLOCKWISE);
+        mat = await cv.rotateAsync(mat, cv.ROTATE_90_CLOCKWISE);
         toDispose.add(mat);
       }
 
@@ -45,7 +45,7 @@ class ImageOps {
 
       if (minWidth > 0 && result.cols < minWidth) {
         final scale = minWidth / result.cols;
-        result = cv.resize(result, (
+        result = await cv.resizeAsync(result, (
           minWidth,
           (result.rows * scale).round(),
         ), interpolation: cv.INTER_CUBIC);
@@ -74,7 +74,7 @@ class ImageOps {
     int outWidth = 1654,
     String label = 'page',
   }) async {
-    var mat = cv.imread(inputPath);
+    var mat = await cv.imreadAsync(inputPath);
     if (mat.isEmpty) {
       mat.dispose();
       throw StateError('Failed to read image: $inputPath');
@@ -82,24 +82,24 @@ class ImageOps {
     final toDispose = <cv.Mat>[mat];
     try {
       if (mat.cols > mat.rows) {
-        mat = cv.rotate(mat, cv.ROTATE_90_CLOCKWISE);
+        mat = await cv.rotateAsync(mat, cv.ROTATE_90_CLOCKWISE);
         toDispose.add(mat);
       }
 
       // Find the outline on a small copy; it is faster and ignores print.
       final scale = math.min(1.0, 800 / math.max(mat.cols, mat.rows));
-      final small = cv.resize(mat, (
+      final small = await cv.resizeAsync(mat, (
         (mat.cols * scale).round(),
         (mat.rows * scale).round(),
       ), interpolation: cv.INTER_AREA);
-      final gray = cv.cvtColor(small, cv.COLOR_BGR2GRAY);
-      final blurred = cv.gaussianBlur(gray, (5, 5), 0);
-      final edges = cv.canny(blurred, 50, 150);
+      final gray = await cv.cvtColorAsync(small, cv.COLOR_BGR2GRAY);
+      final blurred = await cv.gaussianBlurAsync(gray, (5, 5), 0);
+      final edges = await cv.cannyAsync(blurred, 50, 150);
       final kernel = cv.getStructuringElement(cv.MORPH_RECT, (5, 5));
-      final closed = cv.dilate(edges, kernel);
+      final closed = await cv.dilateAsync(edges, kernel);
       toDispose.addAll([small, gray, blurred, edges, kernel, closed]);
 
-      final (contours, hierarchy) = cv.findContours(
+      final (contours, hierarchy) = await cv.findContoursAsync(
         closed,
         cv.RETR_EXTERNAL,
         cv.CHAIN_APPROX_SIMPLE,
@@ -143,7 +143,10 @@ class ImageOps {
         cv.Point(0, outHeight - 1),
       ]);
       final transform = cv.getPerspectiveTransform(from, to);
-      final page = cv.warpPerspective(mat, transform, (outWidth, outHeight));
+      final page = await cv.warpPerspectiveAsync(mat, transform, (
+        outWidth,
+        outHeight,
+      ));
       toDispose.addAll([transform, page]);
 
       return await _write(page, label);
@@ -157,21 +160,21 @@ class ImageOps {
   /// A contrast-normalised copy (CLAHE on the lightness channel) for a second
   /// OCR attempt on a dim or uneven photo.
   Future<String> enhance(String inputPath, {String label = 'enhanced'}) async {
-    final mat = cv.imread(inputPath);
+    final mat = await cv.imreadAsync(inputPath);
     if (mat.isEmpty) {
       mat.dispose();
       throw StateError('Failed to read image: $inputPath');
     }
     final toDispose = <cv.Mat>[mat];
     try {
-      final lab = cv.cvtColor(mat, cv.COLOR_BGR2Lab);
-      final channels = cv.split(lab);
+      final lab = await cv.cvtColorAsync(mat, cv.COLOR_BGR2Lab);
+      final channels = await cv.splitAsync(lab);
       final clahe = cv.CLAHE(2.0, (8, 8));
-      final lightness = clahe.apply(channels[0]);
-      final merged = cv.merge(
+      final lightness = await clahe.applyAsync(channels[0]);
+      final merged = await cv.mergeAsync(
         cv.VecMat.fromList([lightness, channels[1], channels[2]]),
       );
-      final result = cv.cvtColor(merged, cv.COLOR_Lab2BGR);
+      final result = await cv.cvtColorAsync(merged, cv.COLOR_Lab2BGR);
       toDispose.addAll([lab, lightness, merged, result]);
       clahe.dispose();
       channels.dispose();
@@ -196,7 +199,7 @@ class ImageOps {
     bool enhance = false,
     String label = 'region',
   }) async {
-    final mat = cv.imread(inputPath);
+    final mat = await cv.imreadAsync(inputPath);
     if (mat.isEmpty) {
       mat.dispose();
       throw StateError('Failed to read image: $inputPath');
@@ -212,21 +215,21 @@ class ImageOps {
 
       if (minWidth > 0 && result.cols < minWidth) {
         final scale = minWidth / result.cols;
-        result = cv.resize(result, (
+        result = await cv.resizeAsync(result, (
           minWidth,
           (result.rows * scale).round(),
         ), interpolation: cv.INTER_CUBIC);
         toDispose.add(result);
       }
       if (enhance) {
-        final lab = cv.cvtColor(result, cv.COLOR_BGR2Lab);
-        final channels = cv.split(lab);
+        final lab = await cv.cvtColorAsync(result, cv.COLOR_BGR2Lab);
+        final channels = await cv.splitAsync(lab);
         final clahe = cv.CLAHE(3.0, (4, 4));
-        final lightness = clahe.apply(channels[0]);
-        final merged = cv.merge(
+        final lightness = await clahe.applyAsync(channels[0]);
+        final merged = await cv.mergeAsync(
           cv.VecMat.fromList([lightness, channels[1], channels[2]]),
         );
-        result = cv.cvtColor(merged, cv.COLOR_Lab2BGR);
+        result = await cv.cvtColorAsync(merged, cv.COLOR_Lab2BGR);
         toDispose.addAll([lab, lightness, merged, result]);
         clahe.dispose();
         channels.dispose();
