@@ -265,14 +265,25 @@ class ScanRunner {
   }
 
   /// [timeout] works as for [idCard].
+  ///
+  /// With [flatten], the page is straightened to a flat A4 sheet before it is
+  /// read, as the built-in camera does when it captures; the clarity and
+  /// framing checks still look at [pagePath], and the result's image is
+  /// [pagePath]. A photo with no clear page outline is read as it is.
   Future<CivilRegistryResult> civilRegistry(
     String pagePath, {
     bool temporary = false,
     PhotoCheck? pageCheck,
+    bool flatten = false,
     Duration? timeout,
   }) => ScanDeadline.run(
     timeout,
-    () => _civilRegistry(pagePath, temporary: temporary, pageCheck: pageCheck),
+    () => _civilRegistry(
+      pagePath,
+      temporary: temporary,
+      pageCheck: pageCheck,
+      flatten: flatten,
+    ),
     () => CivilRegistryResult(
       status: ScanStatus.failed,
       issue: ScanIssue.timedOut,
@@ -288,16 +299,24 @@ class ScanRunner {
     String pagePath, {
     required bool temporary,
     PhotoCheck? pageCheck,
+    required bool flatten,
   }) async {
     final images = _images(DocumentKind.civilRegistryCertificate, {
       DocumentSide.page: pagePath,
     }, temporary);
     final stopwatch = Stopwatch()..start();
+    String? flatPath;
     try {
       const kind = DocumentKind.civilRegistryCertificate;
       final check = pageCheck ?? await checkPhoto(pagePath, kind);
       ScanDeadline.check();
-      final reading = await _services.civilRegistryScanService.scan(pagePath);
+      if (flatten) {
+        flatPath = await _flatPage(pagePath);
+        ScanDeadline.check();
+      }
+      final reading = await _services.civilRegistryScanService.scan(
+        flatPath ?? pagePath,
+      );
       ScanDeadline.check();
       final readable = ScanReview.isReadable(
         kind: kind,
@@ -329,6 +348,7 @@ class ScanRunner {
           'rawMlKit': reading.rawMlKit,
           if (check.quality != null) 'imageQuality': check.quality!.toJson(),
           if (check.framing != null) 'framing': check.framing,
+          if (flatten) 'pageFlattened': flatPath != null,
           'scanMs': stopwatch.elapsedMilliseconds,
         },
         scannedAt: reading.scannedAt,
@@ -342,6 +362,18 @@ class ScanRunner {
         diagnostics: {'error': '$error'},
         scannedAt: DateTime.now(),
       );
+    } finally {
+      if (flatPath != null) await _services.imageOps.deleteTemp(flatPath);
+    }
+  }
+
+  /// A flat A4 copy of the certificate in [path], or null when no page
+  /// outline is found or straightening fails, so the photo is read as it is.
+  Future<String?> _flatPage(String path) async {
+    try {
+      return await _services.imageOps.cropPage(path, label: 'certificate');
+    } catch (_) {
+      return null;
     }
   }
 

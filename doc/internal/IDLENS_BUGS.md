@@ -14,7 +14,7 @@ These bugs are in the `idlens` package ([`WaseemAlBizreh/OCR`](https://github.co
 | [I6](#i6-issues-dont-say-which-side-of-the-id-caused-them) | Issues don't say which side of the ID caused them | **Fixed, not released** | Next release (adds `issueSides`) |
 | [I7](#i7-a-running-read-cant-be-cancelled) | A running read can't be cancelled | **Fixed with a time limit, not released** | Next release (adds `timeout`) |
 | [I8](#i8-a-document-far-from-the-camera-can-be-accepted) | A document far from the camera can be accepted | **Fixed, not released** (limit to check on real photos) | Next release |
-| [I9](#i9-processcivilregistry-doesnt-flatten-the-page) | `processCivilRegistry` doesn't flatten the page | Low once I10 ships | 0.1.4 |
+| [I9](#i9-processcivilregistry-doesnt-flatten-the-page) | `processCivilRegistry` doesn't flatten the page | **Fixed, not released** | Next release |
 | [I10](#i10-apps-have-to-build-their-own-camera) | Apps have to build their own camera, with no Arabic support | High, comes before the accuracy test | 0.1.4 |
 | [I11](#i11-scan-has-its-own-path-and-no-clear-role) | `scan*` has its own path and no clear role | Medium | 0.1.4 and 0.2.0 |
 
@@ -852,8 +852,22 @@ A small document means less detail for reading and a poor image for the backend'
 
 ## I9. `processCivilRegistry` doesn't flatten the page
 
-- [ ] Fixed in idlens
+- [x] Fixed in idlens (2026-11-03, not committed or released)
 - [ ] Adopted in the app
+
+**Summary of the fix**
+
+- `processCivilRegistry` runs `ImageOps.cropPage` on the photo and reads the
+  flat page. With no outline, or if straightening fails, it reads the photo
+  as it is.
+- The step lives in `ScanRunner.civilRegistry` (`flatten: true`), so the time
+  limit from I7 covers it. The built-in flow doesn't pass it, because its
+  camera has already straightened the page.
+- The clarity and framing checks still look at the original photo, where the
+  page edges show. Only the reading uses the flat copy.
+- The flat copy is a temporary file and is deleted after the read. The app's
+  file isn't changed and is still the result's image.
+- `diagnostics['pageFlattened']` says whether the page was straightened.
 
 **What happens**
 

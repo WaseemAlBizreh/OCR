@@ -80,6 +80,11 @@ text.
   flow offers "Try again" for it.
 - `diagnostics` has a new `framing` entry (and `frontFraming` for an ID card)
   saying how the framing was judged.
+- `processCivilRegistry` now straightens a tilted or distant page to a flat A4
+  sheet before reading it, as the built-in camera does. A photo with no clear
+  page outline is read as before. The file passed in isn't changed and is
+  still the result's image; `diagnostics['pageFlattened']` says whether the
+  page was straightened.
 
 ## 0.1.3
 

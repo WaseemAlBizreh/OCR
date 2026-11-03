@@ -97,6 +97,11 @@ class IdLens {
 
   /// Reads the [page] photo of a civil registry certificate, without any UI.
   /// Files, errors and [timeout] are handled as in [processIdCard].
+  ///
+  /// A tilted or distant page is straightened to a flat A4 sheet before it is
+  /// read, as the built-in camera does; a photo with no clear page outline is
+  /// read as it is. [page] itself is not changed, and it is the image on the
+  /// result.
   Future<CivilRegistryResult> processCivilRegistry({
     required File page,
     Duration? timeout,
@@ -104,7 +109,11 @@ class IdLens {
   }) async {
     _requirePositive(timeout);
     await _requireReadable([page]);
-    return ScanRunner().civilRegistry(page.path, timeout: timeout);
+    return ScanRunner().civilRegistry(
+      page.path,
+      flatten: true,
+      timeout: timeout,
+    );
   }
 
   Future<Object?> _flow(
