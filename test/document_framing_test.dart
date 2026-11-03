@@ -1,5 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:idlens/src/domain/document_framing.dart';
+import 'package:idlens/src/domain/image_quality.dart';
 
 /// A 400 x 300 photo of an ID card (85.6 / 54), cropped with the camera's
 /// margin: a well-placed card is about 357 x 225 pixels, 21 from the sides.
@@ -176,24 +177,98 @@ void main() {
   });
 
   group('coverage', () {
-    test('is the share of the photo taken by the bright area', () {
-      const measure = FrameMeasure(
-        width: 400,
-        height: 300,
-        region: FrameRegion(
-          share: 0.3,
-          left: 100,
-          top: 75,
-          right: 300,
-          bottom: 225,
-          contact: [0, 0, 0, 0],
-        ),
-      );
-      expect(measure.coverage, closeTo(0.25, 1e-9));
+    FrameCoverage cover({List<FramePoint>? outline, FrameRegion? region}) =>
+        DocumentFraming.coverage(
+          FrameMeasure(
+            width: 400,
+            height: 300,
+            outline: outline,
+            region: region,
+          ),
+          aspectRatio: idAspect,
+        );
+
+    // A light table: one bright area over the whole photo.
+    final lightTable = region(
+      share: 0.97,
+      box: [0, 0, 400, 300],
+      contact: [300, 400, 300, 400],
+    );
+
+    test('a well-placed card measured by its outline is not far', () {
+      final c = cover(outline: box(21, 37, 378, 262));
+      expect(c.method, FrameMethod.outline);
+      expect(c.share, closeTo(0.67, 0.01));
+      expect(c.share, greaterThan(ImageQuality.minDocumentCoverage));
     });
 
-    test('is 1 when no area was found', () {
-      expect(const FrameMeasure(width: 400, height: 300).coverage, 1);
+    test('a far card is measured by its outline, below the cut-off limit', () {
+      // 60% of the box: 214 x 135, 0.24 of the photo.
+      final c = cover(outline: box(93, 82, 307, 217));
+      expect(c.method, FrameMethod.outline);
+      expect(c.share, lessThan(DocumentFraming.minOutlineShare));
+      expect(c.share, lessThan(ImageQuality.minDocumentCoverage));
+    });
+
+    test('a far card on a light table is far, not hidden by the table', () {
+      final c = cover(outline: box(93, 82, 307, 217), region: lightTable);
+      expect(c.method, FrameMethod.outline);
+      expect(c.share, lessThan(ImageQuality.minDocumentCoverage));
+    });
+
+    test('a bright object in a corner does not make a far card look near', () {
+      // The bright area's box runs from the card to a paper in the corner.
+      final c = cover(
+        outline: box(93, 82, 307, 217),
+        region: region(share: 0.3, box: [93, 0, 400, 217]),
+      );
+      expect(c.method, FrameMethod.outline);
+      expect(c.share, lessThan(ImageQuality.minDocumentCoverage));
+    });
+
+    test('without an outline, the bright area box is used', () {
+      final c = cover(region: region(share: 0.2, box: [100, 75, 300, 225]));
+      expect(c.method, FrameMethod.region);
+      expect(c.share, closeTo(0.25, 1e-9));
+    });
+
+    test('an outline unlike the document falls back to the bright area', () {
+      final c = cover(
+        outline: box(50, 20, 330, 280),
+        region: region(share: 0.2, box: [100, 75, 300, 225]),
+      );
+      expect(c.method, FrameMethod.region);
+    });
+
+    test('an outline smaller than the far limit is not the document', () {
+      // 0.1 of the photo: a printed box, not the card.
+      final c = cover(outline: box(150, 120, 245, 180));
+      expect(c, same(FrameCoverage.unknown));
+    });
+
+    test('a light table with no outline cannot tell', () {
+      expect(cover(region: lightTable).share, 1);
+      expect(cover(region: lightTable).method, isNull);
+    });
+
+    test('a bright area along three edges cannot tell', () {
+      final c = cover(
+        region: region(
+          share: 0.8,
+          box: [0, 0, 400, 260],
+          contact: [260, 400, 260, 0],
+        ),
+      );
+      expect(c, same(FrameCoverage.unknown));
+    });
+
+    test('nothing found cannot tell', () {
+      expect(cover(), same(FrameCoverage.unknown));
+    });
+
+    test('a far outline is not trusted for the cut-off check', () {
+      // Its corners are inside, but at 0.24 the region decides instead.
+      expect(judge(outline: box(93, 82, 307, 217)), isNull);
     });
   });
 

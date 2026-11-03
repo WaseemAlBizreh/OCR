@@ -38,7 +38,9 @@ class DocumentFrameChecker {
 
   /// The largest convex 4-corner shape drawn by edges, as `cropPage` finds a
   /// page. The edge limits are lower than `cropPage`'s so that a light card
-  /// on a light table still shows its outline.
+  /// on a light table still shows its outline. Shapes down to
+  /// [DocumentFraming.minFarOutlineShare] are kept, so a far document's
+  /// outline is found too.
   static Future<List<FramePoint>?> _outline(
     cv.Mat small,
     List<cv.Mat> mats,
@@ -55,7 +57,8 @@ class DocumentFrameChecker {
       cv.CHAIN_APPROX_SIMPLE,
     );
     hierarchy.dispose();
-    final minArea = DocumentFraming.minOutlineShare * small.cols * small.rows;
+    final minArea =
+        DocumentFraming.minFarOutlineShare * small.cols * small.rows;
     List<FramePoint>? best;
     var bestArea = minArea;
     for (var i = 0; i < contours.length; i++) {

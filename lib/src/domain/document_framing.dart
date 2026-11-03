@@ -86,18 +86,6 @@ class FrameMeasure {
   /// The largest bright area; null when none.
   final FrameRegion? region;
 
-  /// Share (0..1) of the photo taken by the bright area's bounding box. Low
-  /// when the document is far away. 1 when no area was found, so an unusual
-  /// background never makes a good photo look like a far one.
-  double get coverage {
-    final r = region;
-    if (r == null || width <= 0 || height <= 0) return 1;
-    return ((r.right - r.left) * (r.bottom - r.top) / (width * height)).clamp(
-      0.0,
-      1.0,
-    );
-  }
-
   Map<String, dynamic> toJson() => {
     'width': width,
     'height': height,
@@ -112,7 +100,27 @@ class FrameMeasure {
         'box': [region!.left, region!.top, region!.right, region!.bottom],
         'contact': region!.contact,
       },
-    'coverage': coverage,
+  };
+}
+
+/// How much of the photo the document takes, which is low when it is far
+/// from the camera.
+class FrameCoverage {
+  const FrameCoverage(this.share, this.method);
+
+  /// Nothing measured the document, so it is not judged far.
+  static const unknown = FrameCoverage(1, null);
+
+  /// Share (0..1) of the photo.
+  final double share;
+
+  /// What it was measured from: [FrameMethod.outline] or
+  /// [FrameMethod.region]; null for [unknown].
+  final FrameMethod? method;
+
+  Map<String, dynamic> toJson() => {
+    'share': share,
+    'from': method?.name ?? 'none',
   };
 }
 
@@ -133,8 +141,15 @@ class DocumentFraming {
   /// A corner or area this close to an edge (fraction of the photo) is at it.
   static const edgeMargin = 0.015;
 
-  /// An outline smaller than this share of the photo isn't the document.
+  /// An outline smaller than this share of the photo isn't trusted to say
+  /// whether the document is cut off.
   static const minOutlineShare = 0.3;
+
+  /// An outline down to this share still measures how far the document is.
+  /// A far card is smaller than [minOutlineShare] (60% of the box is about
+  /// 0.29), so distance needs a lower limit. Below it, a printed box on the
+  /// document could be taken for the document.
+  static const minFarOutlineShare = 0.15;
 
   /// How far (as a fraction) an outline's shape may differ from the
   /// document's and still be it.
@@ -159,7 +174,8 @@ class DocumentFraming {
   }) {
     if (measure.width <= 0 || measure.height <= 0) return null;
     final outline = measure.outline;
-    if (outline != null && _isDocument(outline, measure, aspectRatio)) {
+    if (outline != null &&
+        _outlineShare(outline, measure, aspectRatio) >= minOutlineShare) {
       return FrameVerdict(
         FrameMethod.outline,
         _cornersAtEdges(outline, measure),
@@ -182,24 +198,57 @@ class DocumentFraming {
   static FrameVerdict fromText(int touchedSides) =>
       FrameVerdict.text(touchedSides.clamp(0, 4));
 
-  static bool _isDocument(
+  /// How much of the photo the document takes (the "too far" measure):
+  ///
+  /// 1. its outline, when one with the document's shape covers at least
+  ///    [minFarOutlineShare]: the document's own size, whatever is around it;
+  /// 2. otherwise the bright area's bounding box, unless that area is the
+  ///    background (a light table: larger than [maxRegionShare] or along 3 or
+  ///    4 edges), which says nothing about the document;
+  /// 3. otherwise [FrameCoverage.unknown], so an unusual background never
+  ///    makes a good photo look like a far one.
+  static FrameCoverage coverage(
+    FrameMeasure measure, {
+    required double aspectRatio,
+  }) {
+    final photo = measure.width * measure.height;
+    if (photo <= 0) return FrameCoverage.unknown;
+    final outline = measure.outline;
+    if (outline != null) {
+      final share = _outlineShare(outline, measure, aspectRatio);
+      if (share >= minFarOutlineShare) {
+        return FrameCoverage(share.clamp(0.0, 1.0), FrameMethod.outline);
+      }
+    }
+    final r = measure.region;
+    if (r == null ||
+        r.share > maxRegionShare ||
+        _regionAtEdges(r, measure).length >= 3) {
+      return FrameCoverage.unknown;
+    }
+    final box = (r.right - r.left) * (r.bottom - r.top) / photo;
+    return FrameCoverage(box.clamp(0.0, 1.0), FrameMethod.region);
+  }
+
+  /// The share of the photo inside [outline], or 0 when it doesn't have the
+  /// document's shape.
+  static double _outlineShare(
     List<FramePoint> outline,
     FrameMeasure measure,
     double aspectRatio,
   ) {
-    if (outline.length != 4) return false;
+    if (outline.length != 4) return 0;
     // In order first: corners in a crossed order give a wrong area.
     final c = _ordered(outline);
-    final share = _area(c) / (measure.width * measure.height);
-    if (share < minOutlineShare) return false;
     final width = (_distance(c[0], c[1]) + _distance(c[3], c[2])) / 2;
     final height = (_distance(c[0], c[3]) + _distance(c[1], c[2])) / 2;
-    if (width <= 0 || height <= 0) return false;
+    if (width <= 0 || height <= 0) return 0;
     final ratio = width / height;
     // A photo taken with the document turned a quarter is fine too.
     bool near(double expected) =>
         (ratio - expected).abs() <= expected * aspectTolerance;
-    return near(aspectRatio) || near(1 / aspectRatio);
+    if (!near(aspectRatio) && !near(1 / aspectRatio)) return 0;
+    return _area(c) / (measure.width * measure.height);
   }
 
   static List<FrameSide> _cornersAtEdges(

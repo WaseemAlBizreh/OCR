@@ -59,6 +59,12 @@ text.
 - The "too far" limit is now 0.42 of the photo, set for the new margin: a
   document filling at least 80% of the box is accepted, one at 60% is too
   far.
+- Fixed: a document far from the camera on a light table, or next to
+  something bright, was accepted, because "too far" was measured from the
+  brightest area of the photo. It's now measured from the document's outline
+  when one is found, and from the bright area only when it isn't the
+  background. `diagnostics['framing']['coverage']` gives the share and what
+  measured it.
 - New `issueSides` on every result: the pages to retake because of `issue`.
   An ID card with a blurry back and a good front gives `[back]`, so the app
   can ask for that photo only. It is empty when no photo is to blame

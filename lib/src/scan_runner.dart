@@ -52,9 +52,10 @@ class ScanRunner {
   /// read (an ID front, a certificate), or of any whole photo.
   Future<PhotoCheck> checkPhoto(String path, DocumentKind kind) async {
     final frame = await _services.documentFrameChecker.measure(path);
+    final coverage = _coverage(frame, kind);
     final quality = await _services.imageQualityChecker.checkWhole(
       path,
-      documentCoverage: frame?.coverage ?? 1,
+      documentCoverage: coverage.share,
     );
     final verdict = await _framing(path, kind, frame);
     final issue = ScanIssueResolver.resolve(
@@ -65,9 +66,14 @@ class ScanRunner {
     return PhotoCheck(
       issue: issue,
       quality: quality,
-      framing: _framingJson(verdict, frame),
+      framing: _framingJson(verdict, frame, coverage),
     );
   }
+
+  static FrameCoverage _coverage(FrameMeasure? frame, DocumentKind kind) =>
+      frame == null
+      ? FrameCoverage.unknown
+      : DocumentFraming.coverage(frame, aspectRatio: kind.aspectRatio);
 
   /// Whether the document runs past an edge of the photo: from the photo
   /// itself when it can tell, otherwise from printed text at the edges
@@ -90,7 +96,12 @@ class ScanRunner {
   static Map<String, dynamic> _framingJson(
     FrameVerdict verdict,
     FrameMeasure? frame,
-  ) => {...verdict.toJson(), if (frame != null) 'measure': frame.toJson()};
+    FrameCoverage coverage,
+  ) => {
+    ...verdict.toJson(),
+    'coverage': coverage.toJson(),
+    if (frame != null) 'measure': frame.toJson(),
+  };
 
   /// What was captured before the user stopped: nothing was read.
   ScanOutcome incomplete(
@@ -375,10 +386,11 @@ class ScanRunner {
       // fields are incomplete, or a cut-off one, so the photo is always
       // measured.
       final frame = await _services.documentFrameChecker.measure(mrzPagePath);
+      final coverage = _coverage(frame, kind);
       quality = await _services.imageQualityChecker.check(
         mrzPagePath,
         kind,
-        documentCoverage: frame?.coverage ?? 1,
+        documentCoverage: coverage.share,
       );
       verdict = await _framing(
         mrzPagePath,
@@ -387,7 +399,7 @@ class ScanRunner {
         textSides: result.frameTouchedSides,
       );
       framing = {
-        ..._framingJson(verdict, frame),
+        ..._framingJson(verdict, frame, coverage),
         'mrzCut': result.mrz?.cutOff ?? false,
       };
     }

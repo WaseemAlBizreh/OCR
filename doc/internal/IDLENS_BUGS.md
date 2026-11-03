@@ -13,7 +13,7 @@ These bugs are in the `idlens` package ([`WaseemAlBizreh/OCR`](https://github.co
 | [I5](#i5-a-cut-off-document-is-accepted) | A cut-off document is accepted | **Fixed, not released** (limits to check on real photos) | Next release |
 | [I6](#i6-issues-dont-say-which-side-of-the-id-caused-them) | Issues don't say which side of the ID caused them | **Fixed, not released** | Next release (adds `issueSides`) |
 | [I7](#i7-a-running-read-cant-be-cancelled) | A running read can't be cancelled | **Fixed with a time limit, not released** | Next release (adds `timeout`) |
-| [I8](#i8-a-document-far-from-the-camera-can-be-accepted) | A document far from the camera can be accepted | High | 0.1.4 |
+| [I8](#i8-a-document-far-from-the-camera-can-be-accepted) | A document far from the camera can be accepted | **Fixed, not released** (limit to check on real photos) | Next release |
 | [I9](#i9-processcivilregistry-doesnt-flatten-the-page) | `processCivilRegistry` doesn't flatten the page | Low once I10 ships | 0.1.4 |
 | [I10](#i10-apps-have-to-build-their-own-camera) | Apps have to build their own camera, with no Arabic support | High, comes before the accuracy test | 0.1.4 |
 | [I11](#i11-scan-has-its-own-path-and-no-clear-role) | `scan*` has its own path and no clear role | Medium | 0.1.4 and 0.2.0 |
@@ -731,8 +731,63 @@ Future<IdCardResult> processIdCard({
 ## I8. A document far from the camera can be accepted
 
 - [ ] Coverage values collected from real far photos
-- [ ] Fixed in idlens
+- [x] Fixed in idlens (2026-11-03, not committed or released)
 - [ ] Re-tested in the app
+
+**Summary of the fix**
+
+I5 moved the "too far" check into `DocumentFraming` and set the limit to
+0.42, which works on a dark table. It still measured the brightest area, so
+the three problems below stayed. `DocumentFraming.coverage` now measures, in
+this order:
+
+1. **The document's outline**, when its 4 corners are found with the
+   document's shape. This is the document's own size, so a light table or a
+   bright object nearby doesn't change it. The outline search now keeps shapes
+   down to 15% of the photo (`minFarOutlineShare`), because a far card at 60%
+   of the box is only about 0.24–0.29 of the photo and was skipped before. The
+   cut-off check still needs 30%, as in I5.
+2. **The bright area's box**, when there's no outline, except when that area
+   is the background (over 92% of the photo, or along 3 or 4 edges).
+3. **Not judged far** when neither can tell, as before.
+
+| Photo | Before | Now |
+|---|---|---|
+| Far card, dark table | `documentNotInFrame` | `documentNotInFrame` |
+| Far card, light table, outline found | Accepted | `documentNotInFrame` |
+| Far card next to a bright object, outline found | Accepted | `documentNotInFrame` |
+| Far card, light table, no outline found | Accepted | Still accepted |
+
+`diagnostics['framing']['coverage']` (and `frontFraming` for an ID front)
+gives `share` and `from` (`outline`, `region` or `none`), so real photos show
+which measure decided.
+
+**Not done:** the MRZ line width suggested below. The ID back's MRZ is read by
+`MrzReader` through `OcrEngine`, which returns text without positions, and
+that classic path stays unchanged. The outline covers the same cases when it's
+found.
+
+**How it was checked:** `flutter analyze` reports no issues for the package or
+the example. `test/document_framing_test.dart` (11 new coverage tests: far
+card, light table, bright object, fallbacks) and `test/image_quality_test.dart`
+pass, 48 tests, run in a scratch Dart package. Not tried on a phone.
+
+**Still to do:** photograph far and well-placed documents on light and dark
+tables, read `diagnostics['framing']['coverage']`, and check the 0.42 limit
+and the 15% outline limit. A far document on a light table whose outline
+isn't found is still accepted.
+
+**Still needed in the MTN app**
+
+- Upgrade idlens. No code change: `documentNotInFrame` already opens the
+  retake dialog.
+- The app's camera must keep the 6% margin from I5, or a far document's
+  outline and the limit won't match.
+- Add far photos on light and dark tables to `docs/testing/DEVICE_SMOKE.md`,
+  for A4 pages, ID backs and passports.
+
+**The original report** (written for 0.1.3; the limit, the box size and the
+file names have changed since I5)
 
 **What happens**
 
