@@ -56,8 +56,14 @@ class ScanNotice {
   );
 
   /// The notice for a finished scan, or null when there is nothing to say.
-  /// [alreadyShown] is the photo issue the user already saw before reading.
-  static ScanNotice? after(ScanOutcome outcome, {ScanIssue? alreadyShown}) {
+  /// [alreadyShown] is the issue the user already saw for [shownSide]'s
+  /// photo before reading. It is shown again when another page has a problem
+  /// too.
+  static ScanNotice? after(
+    ScanOutcome outcome, {
+    ScanIssue? alreadyShown,
+    DocumentSide? shownSide,
+  }) {
     final issue = outcome.issue;
     final hasMrz = outcome.documentKind.hasMrz;
     if (hasMrz &&
@@ -65,7 +71,8 @@ class ScanNotice {
         (issue == null || issue == ScanIssue.imageNotClear)) {
       return _mrzNotFound;
     }
-    if (issue != null && issue != alreadyShown) {
+    final otherSide = outcome.issueSides.any((side) => side != shownSide);
+    if (issue != null && (issue != alreadyShown || otherSide)) {
       return ScanNotice.forIssue(issue);
     }
     if (hasMrz && outcome.mrz != null && !outcome.mrz!.isValid) {

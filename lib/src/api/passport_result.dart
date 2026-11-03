@@ -7,6 +7,7 @@ class PassportResult extends IdentityDocumentResult {
   const PassportResult({
     required super.status,
     super.issue,
+    super.issueSides,
     super.fieldsToCheck,
     super.images,
     super.diagnostics,

@@ -554,8 +554,43 @@ When idlens finds a cut-off or far document, should the scan return:
 
 ## I6. Issues don't say which side of the ID caused them
 
-- [ ] Fixed in idlens
+- [x] Fixed in idlens (2026-11-03, not committed or released)
 - [ ] Adopted in the app
+
+**Summary of the fix**
+
+The recommended `issuesBySide` map wasn't used: since I1 a result has one
+`issue`, not a list, so a map of lists would bring the complexity back. Every
+result has a new `issueSides` list instead: the pages to retake because of
+`issue`, in document order. idlens already checked the ID front and back
+apart, but `ScanReview.worse` kept only the worse issue and dropped the side.
+`ScanReview.issueSides` now keeps it.
+
+| Case | `issueSides` |
+|---|---|
+| Blurry back, good front | `[back]` |
+| Front cut off, good back | `[front]` |
+| Both photos have a problem | `[front, back]` |
+| No MRZ read, no photo check failed | `[back]` (passport `[dataPage]`, certificate `[page]`) |
+| `wrongDocument` | Every page |
+| No issue, `processingFailed`, `readerUnavailable` | Empty |
+
+It's a list rather than one side, because both photos can be bad at once, and
+naming only the worse one would make the dealer retake twice.
+
+The built-in flow now names the side in the dialog after a scan ("Back: Image
+not clear"). It also fixes a gap found on the way: when the dealer chose "Use
+anyway" for a blurry front, a blurry back was hidden because it was the same
+issue.
+
+**Files changed:** `api/scan_outcome.dart` (field, `toJson`), the three result
+classes, `api/scan_review.dart` (`issueSides`), `scan_runner.dart`,
+`presentation/scan_issue_text.dart`, `presentation/pages/identity_flow_page.dart`,
+the example app, the README, `doc/how_it_works.md` and `CHANGELOG.md`.
+
+**How it was checked:** `flutter analyze` reports no issues for the package or
+the example. `scan_review_test.dart` (7 new tests) and `scan_outcome_test.dart`
+pass, 33 tests, run in a scratch Dart package. Nothing was tried on a device.
 
 **What happens**
 
@@ -584,7 +619,7 @@ Fill it from the existing front and back checks.
 **What to change in the app after the fix**
 
 - Upgrade to 0.2.0.
-- Pass the sides through `ScannedDocumentData`.
+- Pass `result.issueSides` through `ScannedDocumentData`.
 - Make `_retake` in [`sim_scan_form.dart`](../../lib/features/sim/presentation/widgets/sim_scan_form.dart#L441) reopen the camera for only the affected side.
 - Close [B26](SIM_REGISTRATION_OCR_BUGS.md#b26-retaking-an-unclear-id-asks-for-both-sides).
 

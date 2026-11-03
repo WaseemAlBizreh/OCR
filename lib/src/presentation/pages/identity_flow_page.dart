@@ -168,7 +168,7 @@ class _IdentityFlowPageState extends State<IdentityFlowPage> {
           setState(() => _busyLabel = null);
           final go = await _confirmContinue(
             ScanNotice.forIssue(issue),
-            side: side,
+            sides: [side],
           );
           if (!go) return;
           setState(() => _busyLabel = 'Scanning document...');
@@ -193,12 +193,19 @@ class _IdentityFlowPageState extends State<IdentityFlowPage> {
       };
       if (!mounted) return;
 
-      final notice = ScanNotice.after(outcome, alreadyShown: check?.issue);
+      final notice = ScanNotice.after(
+        outcome,
+        alreadyShown: check?.issue,
+        shownSide: side,
+      );
       if (notice != null) {
         setState(() => _busyLabel = null);
         final blocked =
             widget.options.requireValidMrz && ScanNotice.hasMrzProblem(outcome);
-        if (!await _confirmContinue(notice, blocked: blocked)) {
+        final sides = notice.readAgain
+            ? const <DocumentSide>[]
+            : outcome.issueSides;
+        if (!await _confirmContinue(notice, sides: sides, blocked: blocked)) {
           // The photos were fine: read them again rather than retaking.
           if (notice.readAgain && mounted) unawaited(_scan());
           return;
@@ -221,7 +228,7 @@ class _IdentityFlowPageState extends State<IdentityFlowPage> {
   /// offered.
   Future<bool> _confirmContinue(
     ScanNotice notice, {
-    DocumentSide? side,
+    List<DocumentSide> sides = const [],
     bool blocked = false,
   }) async {
     final go = await showDialog<bool>(
@@ -229,9 +236,9 @@ class _IdentityFlowPageState extends State<IdentityFlowPage> {
       barrierDismissible: false,
       builder: (context) => AlertDialog(
         title: Text(
-          side == null || widget.kind.sides.length < 2
+          sides.isEmpty || widget.kind.sides.length < 2
               ? notice.title
-              : '${side.label}: ${notice.title}',
+              : '${_sidesLabel(sides)}: ${notice.title}',
         ),
         content: Text(notice.message),
         actions: [
@@ -249,6 +256,12 @@ class _IdentityFlowPageState extends State<IdentityFlowPage> {
     );
     return go ?? false;
   }
+
+  /// "Front", "Back" or "Front and back".
+  static String _sidesLabel(List<DocumentSide> sides) => [
+    sides.first.label,
+    for (final side in sides.skip(1)) side.label.toLowerCase(),
+  ].join(' and ');
 
   void _toast(String message) {
     ScaffoldMessenger.of(

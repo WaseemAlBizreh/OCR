@@ -149,6 +149,7 @@ class ScanRunner {
       return IdCardResult(
         status: judged.status,
         issue: judged.issue,
+        issueSides: judged.issueSides,
         fieldsToCheck: judged.fieldsToCheck,
         images: images,
         diagnostics: {
@@ -186,6 +187,7 @@ class ScanRunner {
       return PassportResult(
         status: judged.status,
         issue: judged.issue,
+        issueSides: judged.issueSides,
         fieldsToCheck: judged.fieldsToCheck,
         images: images,
         diagnostics: _diagnostics(
@@ -239,6 +241,11 @@ class ScanRunner {
           fieldsToCheck: fieldsToCheck,
         ),
         issue: issue,
+        issueSides: ScanReview.issueSides(
+          issue,
+          kind: kind,
+          photos: {DocumentSide.page: check.issue},
+        ),
         fieldsToCheck: fieldsToCheck,
         images: images,
         diagnostics: {
@@ -275,6 +282,7 @@ class ScanRunner {
   Future<
     ({
       ScanIssue? issue,
+      List<DocumentSide> issueSides,
       List<String> fieldsToCheck,
       ScanStatus status,
       ImageQuality? quality,
@@ -338,6 +346,14 @@ class ScanRunner {
     );
     return (
       issue: issue,
+      issueSides: ScanReview.issueSides(
+        issue,
+        kind: kind,
+        photos: {
+          if (kind == DocumentKind.sudanId) DocumentSide.front: frontIssue,
+          kind.sides.last: resolved,
+        },
+      ),
       fieldsToCheck: fieldsToCheck,
       status: ScanReview.statusFor(
         issue: issue,

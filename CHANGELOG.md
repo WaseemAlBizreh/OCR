@@ -59,6 +59,13 @@ text.
 - The "too far" limit is now 0.42 of the photo, set for the new margin: a
   document filling at least 80% of the box is accepted, one at 60% is too
   far.
+- New `issueSides` on every result: the pages to retake because of `issue`.
+  An ID card with a blurry back and a good front gives `[back]`, so the app
+  can ask for that photo only. It is empty when no photo is to blame
+  (`processingFailed`, `readerUnavailable`). `toJson()` includes it.
+- The built-in flow names the side in its dialog after a scan ("Back: Image
+  not clear"). A problem on the ID back is no longer hidden when the user
+  already chose "Use anyway" for the same problem on the front.
 - `diagnostics` has a new `framing` entry (and `frontFraming` for an ID card)
   saying how the framing was judged.
 

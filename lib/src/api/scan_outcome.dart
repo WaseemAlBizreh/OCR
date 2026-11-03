@@ -17,6 +17,7 @@ abstract class ScanOutcome {
     required this.status,
     required this.documentKind,
     this.issue,
+    this.issueSides = const [],
     this.fieldsToCheck = const [],
     this.images = const [],
     this.diagnostics = const {},
@@ -32,6 +33,12 @@ abstract class ScanOutcome {
   /// What is wrong with the photo or the document, or null when nothing is.
   /// Always set when [status] is [ScanStatus.failed], so the app can say why.
   final ScanIssue? issue;
+
+  /// The pages to retake because of [issue], in document order: only the
+  /// back when the front was fine, both when both photos had a problem.
+  /// Empty when there is no issue, or when no photo is to blame (the reader
+  /// couldn't start, or reading failed). A one-page document lists its page.
+  final List<DocumentSide> issueSides;
 
   /// Keys in [fields] the user should look at. A key whose value is null was
   /// not read and is required; a key with a value was read but may be wrong
@@ -67,12 +74,13 @@ abstract class ScanOutcome {
   /// The MRZ, for documents that have one and when it was found.
   MrzData? get mrz => null;
 
-  /// Everything as JSON: status, issue, fields to check, fields, MRZ, image paths and
+  /// Everything as JSON: status, issue and its sides, fields to check, fields, MRZ, image paths and
   /// diagnostics. Image content is not included; use [ScannedImage.bytes].
   Map<String, dynamic> toJson() => {
     'documentKind': documentKind.name,
     'status': status.name,
     'issue': issue?.name,
+    'issueSides': [for (final side in issueSides) side.name],
     'fieldsToCheck': fieldsToCheck,
     'fields': fields,
     if (mrz != null) 'mrz': mrz!.toJson(),

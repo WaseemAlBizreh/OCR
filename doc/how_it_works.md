@@ -26,8 +26,10 @@ photos ──► photo checks ──► MRZ stage ──► printed-text stage �
    printed values fill the rest. A printed value that disagrees with the MRZ,
    or a date that can't be right, is kept and marked as doubtful.
 6. **Review** (`ScanReview`). One place turns all of this into the result's
-   `issue`, `fieldsToCheck` and `status`, with the same rules for every
-   document.
+   `issue`, the sides to retake (`issueSides`), `fieldsToCheck` and
+   `status`, with the same rules for every document. An ID card keeps the
+   front's and the back's photo checks apart, so `issueSides` can name only
+   the side that caused the issue.
 7. **Result.** Fields, MRZ, issue, fields to check and the images are returned
    as one typed object. English warnings for logs are in `diagnostics`.
 

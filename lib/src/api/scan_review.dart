@@ -91,6 +91,30 @@ class ScanReview {
     ScanIssue.imageNotClear: 4,
   };
 
+  /// The pages to retake for [issue], in document order: each page whose own
+  /// check found a problem ([photos]), or else the page that was read for the
+  /// MRZ or the certificate fields (the last one), since the problem came
+  /// from reading it. A wrong document means every page. Empty when there is
+  /// no issue or no photo is to blame.
+  static List<DocumentSide> issueSides(
+    ScanIssue? issue, {
+    required DocumentKind kind,
+    Map<DocumentSide, ScanIssue?> photos = const {},
+  }) {
+    switch (issue) {
+      case null || ScanIssue.processingFailed || ScanIssue.readerUnavailable:
+        return const [];
+      case ScanIssue.wrongDocument:
+        return kind.sides;
+      case ScanIssue.documentNotInFrame || ScanIssue.imageNotClear:
+        final sides = [
+          for (final side in kind.sides)
+            if (photos[side] != null) side,
+        ];
+        return sides.isEmpty ? [kind.sides.last] : sides;
+    }
+  }
+
   /// The issue to report: an unreadable document always has one, so the app
   /// can say why it failed.
   static ScanIssue? issueFor(ScanIssue? issue, {required bool readable}) =>

@@ -254,4 +254,96 @@ void main() {
       );
     });
   });
+
+  group('issueSides', () {
+    const id = DocumentKind.sudanId;
+    const front = DocumentSide.front;
+    const back = DocumentSide.back;
+
+    test('names only the back when the front was fine', () {
+      expect(
+        ScanReview.issueSides(
+          ScanIssue.imageNotClear,
+          kind: id,
+          photos: {front: null, back: ScanIssue.imageNotClear},
+        ),
+        [back],
+      );
+    });
+
+    test('names only the front when the back was fine', () {
+      expect(
+        ScanReview.issueSides(
+          ScanIssue.documentNotInFrame,
+          kind: id,
+          photos: {front: ScanIssue.documentNotInFrame, back: null},
+        ),
+        [front],
+      );
+    });
+
+    test('names both sides in order when both had a problem', () {
+      expect(
+        ScanReview.issueSides(
+          ScanIssue.documentNotInFrame,
+          kind: id,
+          photos: {
+            back: ScanIssue.documentNotInFrame,
+            front: ScanIssue.imageNotClear,
+          },
+        ),
+        [front, back],
+      );
+    });
+
+    test('blames the read page when no photo check found a problem', () {
+      expect(ScanReview.issueSides(ScanIssue.imageNotClear, kind: id), [back]);
+      expect(
+        ScanReview.issueSides(
+          ScanIssue.imageNotClear,
+          kind: DocumentKind.civilRegistryCertificate,
+        ),
+        [DocumentSide.page],
+      );
+    });
+
+    test('a wrong document means every page', () {
+      expect(
+        ScanReview.issueSides(
+          ScanIssue.wrongDocument,
+          kind: id,
+          photos: {back: ScanIssue.wrongDocument},
+        ),
+        [front, back],
+      );
+    });
+
+    test('a passport reports its data page', () {
+      expect(
+        ScanReview.issueSides(
+          ScanIssue.imageNotClear,
+          kind: DocumentKind.passport,
+          photos: {DocumentSide.dataPage: ScanIssue.imageNotClear},
+        ),
+        [DocumentSide.dataPage],
+      );
+    });
+
+    test('is empty without an issue or when no photo is to blame', () {
+      for (final issue in [
+        null,
+        ScanIssue.processingFailed,
+        ScanIssue.readerUnavailable,
+      ]) {
+        expect(
+          ScanReview.issueSides(
+            issue,
+            kind: id,
+            photos: {front: ScanIssue.imageNotClear},
+          ),
+          isEmpty,
+        );
+      }
+    });
+  });
 }

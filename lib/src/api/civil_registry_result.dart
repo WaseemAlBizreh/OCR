@@ -11,6 +11,7 @@ class CivilRegistryResult extends ScanOutcome {
   const CivilRegistryResult({
     required super.status,
     super.issue,
+    super.issueSides,
     super.fieldsToCheck,
     super.images,
     super.diagnostics,

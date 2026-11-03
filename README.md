@@ -254,6 +254,7 @@ await const IdLens().scanIdCard(
 |---|---|
 | `status` | `verified`, `needsReview`, `failed` or `incomplete` |
 | `issue` | What is wrong with the photo or the document (`ScanIssue`), or `null` |
+| `issueSides` | The pages to retake because of `issue` (`DocumentSide`), such as only the back of an ID card |
 | `fieldsToCheck` | Keys in `fields` the user should look at |
 | `images` | The captured pages (`ScannedImage`: `side`, `file`, `bytes()`). `imageFor(side)` finds one. |
 | `mrz` | The MRZ with a result for every check digit in `checks` (ID card and passport) |
@@ -323,6 +324,25 @@ value is never an issue: that field goes in `fieldsToCheck` instead.
 An ID card has two photos, so `issue` is the more serious of the two:
 `wrongDocument`, then `readerUnavailable`, then `processingFailed`, then
 `documentNotInFrame`, then `imageNotClear`.
+
+`issueSides` says which photos to retake, so the user doesn't have to retake a
+good one:
+
+| Case | `issueSides` |
+|---|---|
+| The ID back is blurry, the front is fine | `[back]` |
+| The ID front is cut off, the back is fine | `[front]` |
+| Both ID photos have a problem | `[front, back]`, even when the problems differ |
+| No MRZ was found and no photo check failed | The MRZ page (`back`, `dataPage`), or the certificate `page` |
+| `wrongDocument` | Every page |
+| A passport or certificate photo problem | Its only page |
+| No issue, `processingFailed` or `readerUnavailable` | Empty: no photo is to blame |
+
+```dart
+for (final side in result.issueSides) {
+  // Reopen your camera for this side only.
+}
+```
 
 ### `fieldsToCheck`
 

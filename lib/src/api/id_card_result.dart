@@ -11,6 +11,7 @@ abstract class IdentityDocumentResult extends ScanOutcome {
     required super.status,
     required super.documentKind,
     super.issue,
+    super.issueSides,
     super.fieldsToCheck,
     super.images,
     super.diagnostics,
@@ -82,6 +83,7 @@ class IdCardResult extends IdentityDocumentResult {
   const IdCardResult({
     required super.status,
     super.issue,
+    super.issueSides,
     super.fieldsToCheck,
     super.images,
     super.diagnostics,
