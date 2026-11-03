@@ -116,6 +116,9 @@ class PaddlePassportMrzReader {
       ];
       final text = PassportOcrLines.mrzText(lines);
       return text.isEmpty ? null : text;
+    } on ReaderUnavailableException {
+      // Not a bad read of this band: the whole scan can't use the reader.
+      rethrow;
     } catch (_) {
       return null;
     }

@@ -74,17 +74,14 @@ class PaddleSudanCardParser {
       'phone': _phoneOf(lines),
     };
 
-    final phone = fields['phone'];
     return CardFields(
       fields: fields,
-      warnings: [
-        ...ParserUtils.collectWarnings(fields, const [
-          'arabicName',
-          'nationalNumber',
-        ]),
-        if (phone != null && phone.length != 10)
-          'Phone number may be incomplete (${phone.length} digits read).',
-      ],
+      // Only what the card is not usable without. The MRZ has no national
+      // number and no Arabic name, so neither has a backup.
+      warnings: ParserUtils.collectWarnings(fields, const [
+        'arabicName',
+        'nationalNumber',
+      ]),
     );
   }
 
@@ -209,8 +206,9 @@ class PaddleSudanCardParser {
   /// The phone: the digits printed after `ت/` on the address row, after the
   /// word العنوان. It is the only number the card prints in Arabic-Indic digits,
   /// so any line carrying a run of those digits is the phone row even when the
-  /// label or the `ت/` came out garbled. Whatever digits were read are
-  /// returned (a wrong count is flagged by [parseFront], not hidden).
+  /// label or the `ت/` came out garbled. A number without exactly ten digits
+  /// is null: the phone is optional, so nothing is reported rather than a
+  /// partial number.
   String? _phoneOf(List<String> lines) {
     final marked = RegExp(r'ت\s*/|/\s*ت|هاتف|tel', caseSensitive: false);
     final labelled = lines.where(
@@ -244,7 +242,7 @@ class PaddleSudanCardParser {
       if (digits.length == 10 && '19'.contains(digits[0])) {
         digits = '0${digits.substring(0, 9)}';
       }
-      return digits;
+      return digits.length == 10 ? digits : null;
     }
     return null;
   }

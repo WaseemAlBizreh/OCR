@@ -1,9 +1,9 @@
-/// Why a scan cannot be trusted. Codes only: the host app decides what to tell
-/// the user, whether to let them continue, and in which language.
+/// What is wrong with the photo or the document as a whole. Codes only: the
+/// host app decides what to tell the user and in which language.
+///
+/// A doubt about a single value is never an issue: that field is listed in
+/// `ScanOutcome.fieldsToCheck` instead.
 enum ScanIssue {
-  /// No MRZ could be read from the image.
-  mrzNotFound,
-
   /// An MRZ was read, but it belongs to another kind of document than the one
   /// being scanned (a passport shown for an ID card, or the reverse).
   wrongDocument,
@@ -13,18 +13,20 @@ enum ScanIssue {
   documentNotInFrame,
 
   /// The photo is not clear enough to read reliably: too dark, blurry or with
-  /// glare on the document.
+  /// glare. Also given when the document is in the frame but its MRZ could
+  /// not be read.
   imageNotClear,
-
-  /// The MRZ was read but at least one of its check digits failed, so some of
-  /// its values may be misread. `MrzData.checks` says which ones.
-  mrzCheckDigitsFailed,
 
   /// Reading the images failed unexpectedly. The images are still returned.
   processingFailed,
+
+  /// idlens couldn't start its text reader on this phone, for example with
+  /// too little free storage. The photos are fine and are still returned.
+  /// Reading the same photos again may work, with no retake needed.
+  readerUnavailable,
 }
 
-/// Picks the one [ScanIssue] to report for a scan.
+/// Picks the one [ScanIssue] to report for a photo.
 class ScanIssueResolver {
   ScanIssueResolver._();
 
@@ -36,27 +38,30 @@ class ScanIssueResolver {
   /// document is cut off.
   static const cutOffSides = 2;
 
-  /// [mrzIssue] is the MRZ validator's code, [recognizedFields] how many
-  /// printed fields were read, and [imageIssue] the photo-quality code (which
-  /// can itself be [ScanIssue.documentNotInFrame] when the document is small
-  /// in the frame) and [frameTouchedSides] the edges text runs up to.
+  /// [wrongDocument] is true when the MRZ belongs to another document,
+  /// [mrzMissing] when a document that has an MRZ showed none,
+  /// [recognizedFields] how many printed fields were read, [imageIssue] the
+  /// photo-quality code (which can itself be [ScanIssue.documentNotInFrame]
+  /// when the document is small in the frame) and [frameTouchedSides] the
+  /// edges text runs up to.
   static ScanIssue? resolve({
-    required ScanIssue? mrzIssue,
+    bool wrongDocument = false,
+    bool mrzMissing = false,
     required int recognizedFields,
     ScanIssue? imageIssue,
     int frameTouchedSides = 0,
   }) {
-    if (mrzIssue == ScanIssue.wrongDocument) return mrzIssue;
+    if (wrongDocument) return ScanIssue.wrongDocument;
     // A document far from the frame is also dark or blurry, but that is not
     // the real cause.
     if (imageIssue == ScanIssue.documentNotInFrame ||
         frameTouchedSides >= cutOffSides) {
       return ScanIssue.documentNotInFrame;
     }
-    if (mrzIssue == ScanIssue.mrzNotFound &&
-        recognizedFields < minFieldsInFrame) {
+    if (mrzMissing && recognizedFields < minFieldsInFrame) {
       return ScanIssue.documentNotInFrame;
     }
-    return imageIssue ?? mrzIssue;
+    if (mrzMissing) return ScanIssue.imageNotClear;
+    return imageIssue;
   }
 }

@@ -92,9 +92,10 @@ class IdentityScanService {
       warnings.addAll(dataPage.warnings);
     }
 
+    final doubtful = <String>{};
     final identity = kind == DocumentKind.passport
-        ? _mergePassport(mrz, dataPage?.fields, warnings)
-        : _merge(mrz, front?.fields, back?.fields, warnings);
+        ? _mergePassport(mrz, dataPage?.fields, warnings, doubtful)
+        : _merge(mrz, front?.fields, back?.fields, warnings, doubtful);
 
     return IdentityScanResult(
       documentKind: kind,
@@ -107,6 +108,7 @@ class IdentityScanService {
       imagePaths: imagePaths,
       rawText: rawText,
       warnings: warnings.toSet().toList(),
+      doubtfulFields: doubtful.toList(),
     );
   }
 
@@ -117,30 +119,35 @@ class IdentityScanService {
     Map<String, String?>? front,
     Map<String, String?>? back,
     List<String> warnings,
+    Set<String> doubtful,
   ) {
     bool trusted(String check) => mrz?.checks[check] ?? false;
 
     String? crossChecked(
+      String key,
       String label,
       String? mrzValue,
       bool mrzTrusted,
       String? printed,
-    ) => _crossChecked(warnings, label, mrzValue, mrzTrusted, printed);
+    ) => _crossChecked(
+      warnings,
+      doubtful,
+      key,
+      label,
+      mrzValue,
+      mrzTrusted,
+      printed,
+    );
 
     final expiryDate = crossChecked(
+      'expiryDate',
       'Expiry date',
       mrz?.expiryDate,
       trusted('expiryDate'),
       back?['expiryDate'],
     );
-    var issueDate = _toIsoDate(back?['issueDate']) ?? back?['issueDate'];
-    // An issue date on or after the expiry date cannot be right (ISO dates
-    // compare as text), so report nothing rather than a wrong date.
-    if (issueDate != null &&
-        expiryDate != null &&
-        issueDate.compareTo(expiryDate) >= 0) {
-      issueDate = null;
-    }
+    final issueDate = _toIsoDate(back?['issueDate']) ?? back?['issueDate'];
+    _checkIssueBeforeExpiry(issueDate, expiryDate, warnings, doubtful);
 
     return {
       'documentType': mrz?.documentCode,
@@ -151,6 +158,7 @@ class IdentityScanService {
       'surname': mrz?.surname,
       'givenNames': mrz?.givenNames,
       'dateOfBirth': crossChecked(
+        'dateOfBirth',
         'Date of birth',
         mrz?.dateOfBirth,
         trusted('dateOfBirth'),
@@ -171,9 +179,11 @@ class IdentityScanService {
   }
 
   /// The MRZ value when its own check digit passed (a differing printed value
-  /// becomes a warning); otherwise the printed value, then the MRZ value.
+  /// marks [key] doubtful); otherwise the printed value, then the MRZ value.
   static String? _crossChecked(
     List<String> warnings,
+    Set<String> doubtful,
+    String key,
     String label,
     String? mrzValue,
     bool mrzTrusted,
@@ -182,6 +192,7 @@ class IdentityScanService {
     final printedIso = _toIsoDate(printed);
     if (mrzTrusted && mrzValue != null) {
       if (printedIso != null && printedIso != mrzValue) {
+        doubtful.add(key);
         warnings.add(
           '$label on card ($printedIso) differs from MRZ ($mrzValue).',
         );
@@ -191,6 +202,25 @@ class IdentityScanService {
     return printedIso ?? printed ?? mrzValue;
   }
 
+  /// An issue date on or after the expiry date cannot be right (ISO dates
+  /// compare as text). It is kept as read and marked for the user to check.
+  static void _checkIssueBeforeExpiry(
+    String? issueDate,
+    String? expiryDate,
+    List<String> warnings,
+    Set<String> doubtful,
+  ) {
+    if (issueDate == null ||
+        expiryDate == null ||
+        issueDate.compareTo(expiryDate) < 0) {
+      return;
+    }
+    doubtful.add('issueDate');
+    warnings.add(
+      'Issue date ($issueDate) is not before the expiry date ($expiryDate).',
+    );
+  }
+
   /// Passport payload: the MRZ for everything it holds, the printed data page
   /// for what the MRZ lacks (place of birth, issue date and place, national
   /// number, Arabic name).
@@ -198,22 +228,21 @@ class IdentityScanService {
     MrzData? mrz,
     Map<String, String?>? page,
     List<String> warnings,
+    Set<String> doubtful,
   ) {
     bool trusted(String check) => mrz?.checks[check] ?? false;
 
     final expiryDate = _crossChecked(
       warnings,
+      doubtful,
+      'expiryDate',
       'Expiry date',
       mrz?.expiryDate,
       trusted('expiryDate'),
       page?['expiryDate'],
     );
-    var issueDate = _toIsoDate(page?['issueDate']) ?? page?['issueDate'];
-    if (issueDate != null &&
-        expiryDate != null &&
-        issueDate.compareTo(expiryDate) >= 0) {
-      issueDate = null;
-    }
+    final issueDate = _toIsoDate(page?['issueDate']) ?? page?['issueDate'];
+    _checkIssueBeforeExpiry(issueDate, expiryDate, warnings, doubtful);
 
     // Sudanese passports carry the national number in the MRZ personal-number
     // field as well as on the printed page.
@@ -226,6 +255,7 @@ class IdentityScanService {
     if (mrzNational != null &&
         printedNational != null &&
         mrzNational != printedNational) {
+      doubtful.add('nationalNumber');
       warnings.add(
         'National number on the page ($printedNational) differs from the MRZ ($mrzNational).',
       );
@@ -241,6 +271,8 @@ class IdentityScanService {
       'givenNames': mrz?.givenNames,
       'dateOfBirth': _crossChecked(
         warnings,
+        doubtful,
+        'dateOfBirth',
         'Date of birth',
         mrz?.dateOfBirth,
         trusted('dateOfBirth'),

@@ -8,10 +8,9 @@ import 'package:idlens/src/domain/mrz_data.dart';
 
 /// Printed fields read from a passport data page.
 class PassportPage {
-  const PassportPage(this.fields, this.warnings);
+  const PassportPage(this.fields);
 
   final Map<String, String?> fields;
-  final List<String> warnings;
 }
 
 class _Hit {
@@ -168,14 +167,9 @@ class PaddlePassportParser {
       'expiryDate': expiry == null ? null : CardDates.slashed(expiry),
     };
 
-    return PassportPage(
-      fields,
-      ParserUtils.collectWarnings(fields, const [
-        'placeOfBirth',
-        'issueDate',
-        'placeOfIssue',
-      ]),
-    );
+    // Nothing printed is required: the MRZ carries the identity, and problems
+    // with it are reported as issues. A printed field not read stays null.
+    return PassportPage(fields);
   }
 
   // ------------------------------------------------------------------ labels

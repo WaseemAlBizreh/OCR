@@ -27,4 +27,33 @@ void main() {
       'ميرغنى مكي ميرغنى عثمان',
     );
   });
+
+  group('warnings', () {
+    const complete =
+        '11974221992\nالاسم ميرغنى مكي ميرغنى عثمان\n'
+        'العنوان الخرطوم ت/ ٠٩١٢٣٤٥٦٧٨';
+
+    test('a complete front has no warnings', () {
+      final front = parser.parseFront(complete);
+      expect(front.fields['phone'], '0912345678');
+      expect(front.warnings, isEmpty);
+    });
+
+    test('a missing required field is reported', () {
+      final front = parser.parseFront('العنوان الخرطوم ت/ ٠٩١٢٣٤٥٦٧٨');
+      expect(front.warnings, [
+        'Missing field: arabicName',
+        'Missing field: nationalNumber',
+      ]);
+    });
+
+    test('an incomplete phone is dropped without a warning', () {
+      final front = parser.parseFront(
+        '11974221992\nالاسم ميرغنى مكي ميرغنى عثمان\n'
+        'العنوان الخرطوم ت/ ٠٩١٢٣٤٥',
+      );
+      expect(front.fields['phone'], isNull);
+      expect(front.warnings, isEmpty);
+    });
+  });
 }

@@ -14,13 +14,6 @@ class CivilRegistryScanService {
 
   static const _parser = CivilRegistryParser();
 
-  /// Fields without which a read is considered incomplete.
-  static final _key = [
-    CertificateField.nationalNumber.name,
-    CertificateField.name.name,
-    CertificateField.dateOfBirth.name,
-  ];
-
   final CivilRegistryTextReader _reader;
   final ImageOps _imageOps;
 
@@ -73,6 +66,7 @@ class CivilRegistryScanService {
       fields: fields,
       confidence: page.confidence,
       warnings: warnings,
+      doubtfulFields: page.doubtfulFields,
       imagePath: pagePath,
       rawText: raw,
       rawMlKit: rawMlKit,
@@ -152,7 +146,7 @@ class CivilRegistryScanService {
   }
 
   static bool _missingKey(CertificatePage page) =>
-      _key.any((k) => page.fields[k] == null);
+      CivilRegistryParser.keyFields.any((k) => page.fields[k] == null);
 
   static int _found(CertificatePage page) =>
       page.fields.values.where((v) => v != null).length;

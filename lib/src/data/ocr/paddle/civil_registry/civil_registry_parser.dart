@@ -6,7 +6,12 @@ import 'package:idlens/src/data/ocr/paddle/passport/passport_line.dart';
 
 /// Printed fields read from a civil registry certificate.
 class CertificatePage {
-  const CertificatePage(this.fields, this.confidence, this.warnings);
+  const CertificatePage(
+    this.fields,
+    this.confidence,
+    this.warnings, {
+    this.doubtfulFields = const [],
+  });
 
   /// Keyed by [CertificateField.name]; null when not found.
   final Map<String, String?> fields;
@@ -14,6 +19,9 @@ class CertificatePage {
   /// OCR confidence (0..1) of the line each value came from.
   final Map<String, double> confidence;
   final List<String> warnings;
+
+  /// Keys in [fields] whose value was read but may be wrong.
+  final List<String> doubtfulFields;
 }
 
 class _Hit {
@@ -64,6 +72,14 @@ class CivilRegistryParser {
   static final _readable = [
     for (final f in CertificateField.values)
       if (f != CertificateField.other) f,
+  ];
+
+  /// The fields a certificate is not usable without. Only these are reported
+  /// as missing; any other field not read just stays null.
+  static final keyFields = [
+    CertificateField.nationalNumber.name,
+    CertificateField.name.name,
+    CertificateField.dateOfBirth.name,
   ];
 
   CertificatePage parse(List<PassportLine> lines) {
@@ -120,11 +136,20 @@ class CivilRegistryParser {
     fields[CertificateField.nationalNumber.name] ??= _unlabelledNumber(page);
 
     _dateFallback(fields, page);
-    final warnings = _crossValidate(fields);
-    warnings.addAll(
-      ParserUtils.collectWarnings(fields, [for (final f in _readable) f.name]),
+    final doubtful = _conflictingDates(fields);
+    final warnings = [
+      if (doubtful.isNotEmpty)
+        'Date of birth (${fields[CertificateField.dateOfBirth.name]}) is not '
+            'before the issue date (${fields[CertificateField.issueDate.name]}); '
+            'check both.',
+      ...ParserUtils.collectWarnings(fields, keyFields),
+    ];
+    return CertificatePage(
+      fields,
+      confidence,
+      warnings,
+      doubtfulFields: doubtful,
     );
-    return CertificatePage(fields, confidence, warnings);
   }
 
   /// The line carrying the label of [field], or null when it was not found.
@@ -393,13 +418,15 @@ class CivilRegistryParser {
 
   /// The birth date must precede the issue date; if not, one of the two is
   /// misread and the birth date is dropped rather than reported wrong.
-  static List<String> _crossValidate(Map<String, String?> fields) {
+  /// A birth date on or after the issue date cannot be right. Both dates are
+  /// kept as read and returned, so the user checks them.
+  static List<String> _conflictingDates(Map<String, String?> fields) {
     final birth = fields[CertificateField.dateOfBirth.name];
     final issue = fields[CertificateField.issueDate.name];
     if (birth != null && issue != null && birth.compareTo(issue) >= 0) {
-      fields[CertificateField.dateOfBirth.name] = null;
       return [
-        'Date of birth ($birth) is not before the issue date ($issue); check both.',
+        CertificateField.dateOfBirth.name,
+        CertificateField.issueDate.name,
       ];
     }
     return [];

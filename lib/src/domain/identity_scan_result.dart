@@ -14,6 +14,7 @@ class IdentityScanResult {
     this.imagePaths = const {},
     this.rawText = const {},
     this.warnings = const [],
+    this.doubtfulFields = const [],
     DateTime? scannedAt,
   }) : scannedAt = scannedAt ?? DateTime.now();
 
@@ -38,6 +39,10 @@ class IdentityScanResult {
   /// the printed-field parser.
   final Map<DocumentSide, String> rawText;
   final List<String> warnings;
+
+  /// Keys in [identity] whose value was read but may be wrong: it differs
+  /// from the MRZ, or a date cannot be right.
+  final List<String> doubtfulFields;
   final DateTime scannedAt;
 
   /// How many printed fields (front, back or data page) were read.
@@ -58,6 +63,7 @@ class IdentityScanResult {
     'back': backFields,
     if (dataPageFields != null) 'dataPage': dataPageFields,
     'warnings': warnings,
+    'doubtfulFields': doubtfulFields,
     'images': {
       for (final entry in imagePaths.entries) entry.key.name: entry.value,
     },

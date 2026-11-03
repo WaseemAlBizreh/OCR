@@ -224,7 +224,8 @@ class _ResultSheet extends StatelessWidget {
                   child: Text(
                     '${result.status.name}  ·  '
                     '${result.images.length} image(s)'
-                    '${result.issues.isEmpty ? '' : '  ·  ${result.issues.map((i) => i.name).join(', ')}'}',
+                    '${result.issue == null ? '' : '  ·  ${result.issue!.name}'}'
+                    '${result.fieldsToCheck.isEmpty ? '' : '  ·  check: ${result.fieldsToCheck.join(', ')}'}',
                     style: Theme.of(context).textTheme.titleSmall,
                   ),
                 ),

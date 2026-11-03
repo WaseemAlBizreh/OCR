@@ -4,9 +4,12 @@ import 'package:idlens/src/api/id_card_result.dart';
 import 'package:idlens/src/api/passport_result.dart';
 import 'package:idlens/src/api/civil_registry_result.dart';
 import 'package:idlens/src/api/scan_outcome.dart';
+import 'package:idlens/src/api/scan_review.dart';
 import 'package:idlens/src/api/scan_status.dart';
 import 'package:idlens/src/api/scanned_image.dart';
 import 'package:idlens/src/data/ocr/paddle/paddle_latin_hybrid_recognizer.dart';
+import 'package:idlens/src/data/ocr/paddle/paddle_ocr_engine.dart'
+    show ReaderUnavailableException;
 import 'package:idlens/src/data/ocr/paddle/paddle_sudan_card_parser.dart';
 import 'package:idlens/src/domain/document_kind.dart';
 import 'package:idlens/src/domain/identity_scan_result.dart';
@@ -28,8 +31,9 @@ class PhotoCheck {
 /// [ScanOutcome]. The built-in flow and the headless `process*` methods both
 /// go through here, so they cannot disagree.
 ///
-/// It never throws for a problem with the document: those become `issues` on
-/// a result that still carries the images.
+/// It never throws for a problem with the document: those become the `issue`
+/// and `fieldsToCheck` of a result that still carries the images. The rules
+/// for both, and for the status, are in [ScanReview].
 class ScanRunner {
   ScanRunner([IdLensServices? services])
     : _services = services ?? IdLensServices.instance;
@@ -45,7 +49,6 @@ class ScanRunner {
     final quality = _services.imageQualityChecker.checkWhole(path);
     final touched = await _services.frameEdgeChecker.touchedSides(path);
     final issue = ScanIssueResolver.resolve(
-      mrzIssue: null,
       recognizedFields: 0,
       imageIssue: quality?.problem,
       frameTouchedSides: touched,
@@ -104,12 +107,12 @@ class ScanRunner {
         result,
         DocumentKind.sudanId,
         paths[DocumentSide.back]!,
-        extraIssue: front.issue,
+        frontIssue: front.issue,
       );
       return IdCardResult(
         status: judged.status,
-        issues: judged.issues,
-        warnings: result.warnings,
+        issue: judged.issue,
+        fieldsToCheck: judged.fieldsToCheck,
         images: images,
         diagnostics: _diagnostics(
           result,
@@ -124,7 +127,7 @@ class ScanRunner {
     } catch (error) {
       return IdCardResult(
         status: ScanStatus.failed,
-        issues: const [ScanIssue.processingFailed],
+        issue: _failureIssue(error),
         images: images,
         diagnostics: {'error': '$error'},
         scannedAt: DateTime.now(),
@@ -145,8 +148,8 @@ class ScanRunner {
       final judged = await _judge(result, DocumentKind.passport, dataPagePath);
       return PassportResult(
         status: judged.status,
-        issues: judged.issues,
-        warnings: result.warnings,
+        issue: judged.issue,
+        fieldsToCheck: judged.fieldsToCheck,
         images: images,
         diagnostics: _diagnostics(result, judged.quality, null, stopwatch),
         scannedAt: result.scannedAt,
@@ -156,7 +159,7 @@ class ScanRunner {
     } catch (error) {
       return PassportResult(
         status: ScanStatus.failed,
-        issues: const [ScanIssue.processingFailed],
+        issue: _failureIssue(error),
         images: images,
         diagnostics: {'error': '$error'},
         scannedAt: DateTime.now(),
@@ -176,16 +179,28 @@ class ScanRunner {
     try {
       final check = pageCheck ?? await checkPhoto(pagePath);
       final reading = await _services.civilRegistryScanService.scan(pagePath);
-      final issues = [if (check.issue != null) check.issue!];
+      const kind = DocumentKind.civilRegistryCertificate;
+      final readable = ScanReview.isReadable(
+        kind: kind,
+        fields: reading.fields,
+      );
+      final issue = ScanReview.issueFor(check.issue, readable: readable);
+      final fieldsToCheck = ScanReview.fieldsToCheck(
+        kind: kind,
+        fields: reading.fields,
+        doubtful: reading.doubtfulFields,
+      );
       return CivilRegistryResult(
-        status: ScanOutcome.statusFor(
-          issues: issues,
-          warnings: reading.warnings,
+        status: ScanReview.statusFor(
+          issue: issue,
+          readable: readable,
+          fieldsToCheck: fieldsToCheck,
         ),
-        issues: issues,
-        warnings: reading.warnings,
+        issue: issue,
+        fieldsToCheck: fieldsToCheck,
         images: images,
         diagnostics: {
+          'warnings': reading.warnings,
           'rawText': reading.rawText,
           'rawMlKit': reading.rawMlKit,
           if (check.quality != null) 'imageQuality': check.quality!.toJson(),
@@ -198,7 +213,7 @@ class ScanRunner {
     } catch (error) {
       return CivilRegistryResult(
         status: ScanStatus.failed,
-        issues: const [ScanIssue.processingFailed],
+        issue: _failureIssue(error),
         images: images,
         diagnostics: {'error': '$error'},
         scannedAt: DateTime.now(),
@@ -206,37 +221,66 @@ class ScanRunner {
     }
   }
 
-  /// MRZ verdict, photo quality and the one resolved framing/clarity issue
-  /// for a document with an MRZ.
-  Future<({List<ScanIssue> issues, ScanStatus status, ImageQuality? quality})>
+  /// The issue for a read that threw: the text reader couldn't start, which
+  /// reading the same photos again may fix, or any other error.
+  static ScanIssue _failureIssue(Object error) =>
+      error is ReaderUnavailableException
+      ? ScanIssue.readerUnavailable
+      : ScanIssue.processingFailed;
+
+  /// The issue, fields to check and status of a document with an MRZ.
+  /// [frontIssue] is the ID front's own photo problem, which comes first.
+  Future<
+    ({
+      ScanIssue? issue,
+      List<String> fieldsToCheck,
+      ScanStatus status,
+      ImageQuality? quality,
+    })
+  >
   _judge(
     IdentityScanResult result,
     DocumentKind kind,
     String mrzPagePath, {
-    ScanIssue? extraIssue,
+    ScanIssue? frontIssue,
   }) async {
-    final mrzIssue = _mrzValidator.validate(result.mrz, kind);
+    final wrongDocument = _mrzValidator.isWrongDocument(result.mrz, kind);
     ImageQuality? quality;
-    if (mrzIssue != ScanIssue.wrongDocument) {
+    if (!wrongDocument) {
       // Even a found MRZ can come from a dark or blurry photo whose other
       // fields are incomplete, so the photo is always measured.
       quality = await _services.imageQualityChecker.check(mrzPagePath, kind);
     }
     final resolved = ScanIssueResolver.resolve(
-      mrzIssue: mrzIssue,
+      wrongDocument: wrongDocument,
+      mrzMissing: result.mrz == null,
       recognizedFields: result.recognizedFieldCount,
       imageIssue: quality?.problem,
       frameTouchedSides: result.frameTouchedSides ?? 0,
     );
-    final issues = <ScanIssue>{
-      ?extraIssue,
-      ?resolved,
-      if (result.mrz != null && !result.mrz!.isValid)
-        ScanIssue.mrzCheckDigitsFailed,
-    }.toList();
+    final readable = ScanReview.isReadable(
+      kind: kind,
+      fields: result.identity,
+      mrz: result.mrz,
+    );
+    final issue = ScanReview.issueFor(
+      ScanReview.worse(frontIssue, resolved),
+      readable: readable,
+    );
+    final fieldsToCheck = ScanReview.fieldsToCheck(
+      kind: kind,
+      fields: result.identity,
+      doubtful: result.doubtfulFields,
+      mrz: result.mrz,
+    );
     return (
-      issues: issues,
-      status: ScanOutcome.statusFor(issues: issues, warnings: result.warnings),
+      issue: issue,
+      fieldsToCheck: fieldsToCheck,
+      status: ScanReview.statusFor(
+        issue: issue,
+        readable: readable,
+        fieldsToCheck: fieldsToCheck,
+      ),
       quality: quality,
     );
   }
@@ -247,6 +291,7 @@ class ScanRunner {
     ImageQuality? frontQuality,
     Stopwatch stopwatch,
   ) => {
+    'warnings': result.warnings,
     if (result.frontFields != null) 'front': result.frontFields,
     if (result.backFields != null) 'back': result.backFields,
     if (result.dataPageFields != null) 'dataPage': result.dataPageFields,

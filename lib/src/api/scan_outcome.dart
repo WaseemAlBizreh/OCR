@@ -9,15 +9,15 @@ import 'package:idlens/src/domain/scan_issue.dart';
 /// What every scan returns, whatever the document.
 ///
 /// A result is returned as soon as one image was captured, even when reading
-/// failed: [images] is then still filled, so an app may ignore [issues] and
-/// upload the pictures. Fields that could not be read are null.
+/// failed: [images] is then still filled, so an app may upload the pictures
+/// whatever the [status]. Fields that could not be read are null.
 abstract class ScanOutcome {
   /// Creates an outcome. Results are built by idlens; apps read them.
   const ScanOutcome({
     required this.status,
     required this.documentKind,
-    this.issues = const [],
-    this.warnings = const [],
+    this.issue,
+    this.fieldsToCheck = const [],
     this.images = const [],
     this.diagnostics = const {},
     required this.scannedAt,
@@ -29,18 +29,22 @@ abstract class ScanOutcome {
   /// The document that was scanned.
   final DocumentKind documentKind;
 
-  /// Why the scan cannot be fully trusted; empty when nothing was found wrong.
-  final List<ScanIssue> issues;
+  /// What is wrong with the photo or the document, or null when nothing is.
+  /// Always set when [status] is [ScanStatus.failed], so the app can say why.
+  final ScanIssue? issue;
 
-  /// Human-readable detail for [issues], such as which printed value disagrees
-  /// with the MRZ. English text meant for logs, not for end users.
-  final List<String> warnings;
+  /// Keys in [fields] the user should look at. A key whose value is null was
+  /// not read and is required; a key with a value was read but may be wrong
+  /// (it differs from the MRZ, a check digit failed, or the date cannot be
+  /// right). Optional fields that were not read are null and not listed.
+  final List<String> fieldsToCheck;
 
   /// The captured pages, in document order. Never empty on a returned result.
   final List<ScannedImage> images;
 
-  /// Debug data: raw OCR text, MRZ read attempts, photo measurements, timing.
-  /// Its content is not part of the stable API.
+  /// Debug data: raw OCR text, MRZ read attempts, photo measurements, timing
+  /// and English `warnings` for logs. Its content is not part of the stable
+  /// API.
   final Map<String, dynamic> diagnostics;
 
   /// When the scan finished.
@@ -63,13 +67,13 @@ abstract class ScanOutcome {
   /// The MRZ, for documents that have one and when it was found.
   MrzData? get mrz => null;
 
-  /// Everything as JSON: status, issues, fields, MRZ, image paths and
+  /// Everything as JSON: status, issue, fields to check, fields, MRZ, image paths and
   /// diagnostics. Image content is not included; use [ScannedImage.bytes].
   Map<String, dynamic> toJson() => {
     'documentKind': documentKind.name,
     'status': status.name,
-    'issues': [for (final issue in issues) issue.name],
-    'warnings': warnings,
+    'issue': issue?.name,
+    'fieldsToCheck': fieldsToCheck,
     'fields': fields,
     if (mrz != null) 'mrz': mrz!.toJson(),
     'images': [for (final image in images) image.toJson()],
@@ -90,25 +94,6 @@ abstract class ScanOutcome {
       }
     }
   }
-
-  /// Picks the status for the findings of a scan.
-  static ScanStatus statusFor({
-    required List<ScanIssue> issues,
-    required List<String> warnings,
-    bool incomplete = false,
-  }) {
-    if (incomplete) return ScanStatus.incomplete;
-    if (issues.any(_unreadable.contains)) return ScanStatus.failed;
-    if (issues.isNotEmpty || warnings.isNotEmpty) return ScanStatus.needsReview;
-    return ScanStatus.verified;
-  }
-
-  static const _unreadable = {
-    ScanIssue.mrzNotFound,
-    ScanIssue.wrongDocument,
-    ScanIssue.documentNotInFrame,
-    ScanIssue.processingFailed,
-  };
 }
 
 /// Parses `yyyy-MM-dd` or `yyyy/MM/dd` into a date, or null when the text is

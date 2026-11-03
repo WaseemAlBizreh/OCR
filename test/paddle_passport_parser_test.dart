@@ -173,15 +173,11 @@ void main() {
     expect(fields['expiryDate'], '2027/05/16');
   });
 
-  test(
-    'a page with nothing readable gives null fields and soft warnings, not a crash',
-    () {
-      final result = parser.parse(sudan.lines, mrz: sudan.mrz);
-      expect(result.fields.values.every((v) => v == null), isTrue);
-      expect(result.warnings, contains('Missing field: placeOfBirth'));
-      expect(parser.parse(const []).fields['issueDate'], isNull);
-    },
-  );
+  test('a page with nothing readable gives null fields, not a crash', () {
+    final result = parser.parse(sudan.lines, mrz: sudan.mrz);
+    expect(result.fields.values.every((v) => v == null), isTrue);
+    expect(parser.parse(const []).fields['issueDate'], isNull);
+  });
 
   test('MRZ lines mixed into the page text are never read as values', () {
     final lines = [

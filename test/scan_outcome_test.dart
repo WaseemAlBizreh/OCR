@@ -12,71 +12,6 @@ import 'package:idlens/src/domain/document_kind.dart';
 import 'package:idlens/src/domain/scan_issue.dart';
 
 void main() {
-  group('statusFor', () {
-    test('nothing wrong is verified', () {
-      expect(
-        ScanOutcome.statusFor(issues: [], warnings: []),
-        ScanStatus.verified,
-      );
-    });
-
-    test('a warning alone needs review', () {
-      expect(
-        ScanOutcome.statusFor(issues: [], warnings: ['date differs']),
-        ScanStatus.needsReview,
-      );
-    });
-
-    test('a soft issue needs review', () {
-      for (final issue in [
-        ScanIssue.imageNotClear,
-        ScanIssue.mrzCheckDigitsFailed,
-      ]) {
-        expect(
-          ScanOutcome.statusFor(issues: [issue], warnings: []),
-          ScanStatus.needsReview,
-          reason: issue.name,
-        );
-      }
-    });
-
-    test('an unreadable document fails', () {
-      for (final issue in [
-        ScanIssue.mrzNotFound,
-        ScanIssue.wrongDocument,
-        ScanIssue.documentNotInFrame,
-        ScanIssue.processingFailed,
-      ]) {
-        expect(
-          ScanOutcome.statusFor(issues: [issue], warnings: []),
-          ScanStatus.failed,
-          reason: issue.name,
-        );
-      }
-    });
-
-    test('a fatal issue wins over a soft one', () {
-      expect(
-        ScanOutcome.statusFor(
-          issues: [ScanIssue.imageNotClear, ScanIssue.mrzNotFound],
-          warnings: [],
-        ),
-        ScanStatus.failed,
-      );
-    });
-
-    test('incomplete wins over everything', () {
-      expect(
-        ScanOutcome.statusFor(
-          issues: [ScanIssue.mrzNotFound],
-          warnings: ['x'],
-          incomplete: true,
-        ),
-        ScanStatus.incomplete,
-      );
-    });
-  });
-
   group('parseScanDate', () {
     test('reads dashes and slashes', () {
       expect(parseScanDate('1992-09-23'), DateTime(1992, 9, 23));
@@ -154,7 +89,7 @@ void main() {
     test('a failed result still carries its images and serialises', () {
       final result = PassportResult(
         status: ScanStatus.failed,
-        issues: const [ScanIssue.mrzNotFound],
+        issue: ScanIssue.imageNotClear,
         images: [
           ScannedImage(
             side: DocumentSide.dataPage,
@@ -165,7 +100,8 @@ void main() {
       );
       final json = result.toJson();
       expect(json['status'], 'failed');
-      expect(json['issues'], ['mrzNotFound']);
+      expect(json['issue'], 'imageNotClear');
+      expect(json['fieldsToCheck'], isEmpty);
       expect(json['documentKind'], 'passport');
       expect(json['images'], [
         {'side': 'dataPage', 'path': '/tmp/page.jpg'},

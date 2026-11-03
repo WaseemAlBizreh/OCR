@@ -51,7 +51,7 @@ void main() {
     test('an empty frame is documentNotInFrame, not "too dark"', () {
       expect(
         ScanIssueResolver.resolve(
-          mrzIssue: ScanIssue.mrzNotFound,
+          mrzMissing: true,
           recognizedFields: 0,
           imageIssue: ScanIssue.imageNotClear,
         ),
@@ -63,11 +63,7 @@ void main() {
       'text cut off at two edges is documentNotInFrame even with an MRZ',
       () {
         expect(
-          ScanIssueResolver.resolve(
-            mrzIssue: null,
-            recognizedFields: 8,
-            frameTouchedSides: 2,
-          ),
+          ScanIssueResolver.resolve(recognizedFields: 8, frameTouchedSides: 2),
           ScanIssue.documentNotInFrame,
         );
       },
@@ -75,11 +71,7 @@ void main() {
 
     test('text at only one edge is accepted', () {
       expect(
-        ScanIssueResolver.resolve(
-          mrzIssue: null,
-          recognizedFields: 8,
-          frameTouchedSides: 1,
-        ),
+        ScanIssueResolver.resolve(recognizedFields: 8, frameTouchedSides: 1),
         isNull,
       );
     });
@@ -87,7 +79,6 @@ void main() {
     test('a far document wins even when the MRZ was read', () {
       expect(
         ScanIssueResolver.resolve(
-          mrzIssue: null,
           recognizedFields: 8,
           imageIssue: ScanIssue.documentNotInFrame,
         ),
@@ -98,7 +89,7 @@ void main() {
     test('a readable page without an MRZ keeps the photo problem', () {
       expect(
         ScanIssueResolver.resolve(
-          mrzIssue: ScanIssue.mrzNotFound,
+          mrzMissing: true,
           recognizedFields: 6,
           imageIssue: ScanIssue.imageNotClear,
         ),
@@ -109,7 +100,6 @@ void main() {
     test('a found MRZ with a dark photo reports the photo', () {
       expect(
         ScanIssueResolver.resolve(
-          mrzIssue: null,
           recognizedFields: 0,
           imageIssue: ScanIssue.imageNotClear,
         ),
@@ -119,19 +109,20 @@ void main() {
 
     test('a wrong document is never replaced', () {
       expect(
-        ScanIssueResolver.resolve(
-          mrzIssue: ScanIssue.wrongDocument,
-          recognizedFields: 0,
-        ),
+        ScanIssueResolver.resolve(wrongDocument: true, recognizedFields: 0),
         ScanIssue.wrongDocument,
       );
     });
 
-    test('nothing wrong gives null', () {
+    test('an unread MRZ on a clear, framed photo is imageNotClear', () {
       expect(
-        ScanIssueResolver.resolve(mrzIssue: null, recognizedFields: 9),
-        isNull,
+        ScanIssueResolver.resolve(mrzMissing: true, recognizedFields: 6),
+        ScanIssue.imageNotClear,
       );
+    });
+
+    test('nothing wrong gives null', () {
+      expect(ScanIssueResolver.resolve(recognizedFields: 9), isNull);
     });
   });
 }

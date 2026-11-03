@@ -125,13 +125,31 @@ void main() {
     expect(page.fields['profession'], 'طبيب');
   });
 
-  test('a missing field stays null and is reported', () {
+  test('a missing optional field stays null and is not reported', () {
     final lines = fullPage()
       ..removeWhere((l) => l.text == 'مهندس' || l.text == 'المهنة');
     final page = parser.parse(lines);
     expect(page.fields['profession'], isNull);
     expect(page.fields['name'], isNotNull);
-    expect(page.warnings, contains('Missing field: profession'));
+    expect(page.warnings, isEmpty);
+  });
+
+  test('a missing key field stays null and is reported', () {
+    final lines = fullPage()
+      ..removeWhere(
+        (l) => l.text == 'محمد احمد عثمان علي' || l.text == 'الاسم',
+      );
+    final page = parser.parse(lines);
+    expect(page.fields['name'], isNull);
+    expect(page.warnings, ['Missing field: name']);
+  });
+
+  test('a page with nothing readable reports only the key fields', () {
+    expect(parser.parse(const []).warnings, [
+      'Missing field: nationalNumber',
+      'Missing field: name',
+      'Missing field: dateOfBirth',
+    ]);
   });
 
   test('a national number is found even without its label', () {
@@ -139,14 +157,19 @@ void main() {
     expect(parser.parse(lines).fields['nationalNumber'], '12345678901');
   });
 
-  test('a date of birth after the issue date is dropped with a warning', () {
+  test('a date of birth after the issue date is kept and marked', () {
     final lines = fullPage()
       ..removeWhere((l) => l.text == '1990/03/15')
       ..add(value('2027/01/01', 280));
     final page = parser.parse(lines);
-    expect(page.fields['dateOfBirth'], isNull);
+    expect(page.fields['dateOfBirth'], '2027-01-01');
     expect(page.fields['issueDate'], '2026-10-05');
+    expect(page.doubtfulFields, ['dateOfBirth', 'issueDate']);
     expect(page.warnings.any((w) => w.startsWith('Date of birth')), isTrue);
+  });
+
+  test('dates in order are not marked', () {
+    expect(parser.parse(fullPage()).doubtfulFields, isEmpty);
   });
 
   test('a heading is never taken as a value', () {

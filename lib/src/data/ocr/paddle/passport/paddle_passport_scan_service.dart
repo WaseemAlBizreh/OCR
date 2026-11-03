@@ -35,8 +35,9 @@ class PaddlePassportScanService {
     final text = await _textReader.read(dataPagePath, mlkit: page);
     final printed = _parser.parse(text.lines, mrz: mrz);
 
-    final warnings = <String>[..._mrzWarnings(mrz), ...printed.warnings];
-    final identity = _merge(mrz, printed.fields, warnings);
+    final warnings = <String>[..._mrzWarnings(mrz)];
+    final doubtful = <String>{};
+    final identity = _merge(mrz, printed.fields, warnings, doubtful);
 
     return IdentityScanResult(
       documentKind: DocumentKind.passport,
@@ -48,6 +49,7 @@ class PaddlePassportScanService {
       imagePaths: {DocumentSide.dataPage: dataPagePath},
       rawText: {DocumentSide.dataPage: text.flat},
       warnings: warnings.toSet().toList(),
+      doubtfulFields: doubtful.toList(),
     );
   }
 
@@ -80,16 +82,20 @@ class PaddlePassportScanService {
   }
 
   /// MRZ fields win when their own check digit passed; the printed fields fill
-  /// the rest, and disagreements are reported as warnings.
+  /// the rest. A value that disagrees, or a date that cannot be right, is
+  /// added to [doubtful] and explained in [warnings].
   Map<String, dynamic> _merge(
     MrzData? mrz,
     Map<String, String?> page,
     List<String> warnings,
+    Set<String> doubtful,
   ) {
     bool trusted(String check) => mrz?.checks[check] ?? false;
 
     final expiryDate = _crossChecked(
       warnings,
+      doubtful,
+      'expiryDate',
       'Expiry date',
       mrz?.expiryDate,
       trusted('expiryDate'),
@@ -97,11 +103,14 @@ class PaddlePassportScanService {
     );
     var issueDate = _toIsoDate(page['issueDate']) ?? page['issueDate'];
     // An issue date on or after the expiry date cannot be right (ISO dates
-    // compare as text), so report nothing rather than a wrong date.
+    // compare as text). It is kept as read, for the user to check.
     if (issueDate != null &&
         expiryDate != null &&
         issueDate.compareTo(expiryDate) >= 0) {
-      issueDate = null;
+      doubtful.add('issueDate');
+      warnings.add(
+        'Issue date ($issueDate) is not before the expiry date ($expiryDate).',
+      );
     }
 
     final personalNumber =
@@ -118,6 +127,7 @@ class PaddlePassportScanService {
     if (mrzNational != null &&
         printedNational != null &&
         mrzNational != printedNational) {
+      doubtful.add('nationalNumber');
       warnings.add(
         'National number on the page ($printedNational) differs from the MRZ ($mrzNational).',
       );
@@ -134,6 +144,8 @@ class PaddlePassportScanService {
       'givenNames': mrz?.givenNames,
       'dateOfBirth': _crossChecked(
         warnings,
+        doubtful,
+        'dateOfBirth',
         'Date of birth',
         mrz?.dateOfBirth,
         trusted('dateOfBirth'),
@@ -156,9 +168,11 @@ class PaddlePassportScanService {
   }
 
   /// The MRZ value when its own check digit passed (a differing printed value
-  /// becomes a warning); otherwise the printed value, then the MRZ value.
+  /// marks [key] doubtful); otherwise the printed value, then the MRZ value.
   static String? _crossChecked(
     List<String> warnings,
+    Set<String> doubtful,
+    String key,
     String label,
     String? mrzValue,
     bool mrzTrusted,
@@ -167,6 +181,7 @@ class PaddlePassportScanService {
     final printedIso = _toIsoDate(printed);
     if (mrzTrusted && mrzValue != null) {
       if (printedIso != null && printedIso != mrzValue) {
+        doubtful.add(key);
         warnings.add(
           '$label on the page ($printedIso) differs from the MRZ ($mrzValue).',
         );

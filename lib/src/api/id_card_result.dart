@@ -10,8 +10,8 @@ abstract class IdentityDocumentResult extends ScanOutcome {
   const IdentityDocumentResult({
     required super.status,
     required super.documentKind,
-    super.issues,
-    super.warnings,
+    super.issue,
+    super.fieldsToCheck,
     super.images,
     super.diagnostics,
     required super.scannedAt,
@@ -81,8 +81,8 @@ class IdCardResult extends IdentityDocumentResult {
   /// Creates a result. Built by idlens; apps read it.
   const IdCardResult({
     required super.status,
-    super.issues,
-    super.warnings,
+    super.issue,
+    super.fieldsToCheck,
     super.images,
     super.diagnostics,
     required super.scannedAt,

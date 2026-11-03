@@ -21,8 +21,8 @@ Everything runs on the device. No image or text ever leaves the phone.
   your app can still upload them for manual review.
 - **Trustworthy MRZ:** ICAO 9303 check digits are validated, and look-alike
   characters (O and 0, I and 1, S and 5, B and 8) are repaired automatically.
-- **Clear results:** typed fields with real dates, a simple status, and a list
-  of reasons when something looks wrong.
+- **Clear results:** typed fields with real dates, a simple status, the reason
+  when a photo or document has a problem, and the fields the user should check.
 - **Helpful camera flow:** photo tips, front and back capture, a preview with
   retake, and a warning when a photo is blurry, dark or cut off.
 - **Private by design:** OCR runs on the device with PaddleOCR, ML Kit and
@@ -134,6 +134,8 @@ MRZ.
   status `incomplete` that holds those images.
 - A blurry, dark or cut-off photo is shown to the user before reading, and they
   can retake it or choose Use anyway.
+- If the text reader can't start on the phone, the user is told their photos
+  are fine and can choose Try again, which reads the same photos again.
 
 ### `scanPassport`
 
@@ -212,8 +214,12 @@ final result = await const IdLens().processPassport(
   dataPage: File(pickedImage.path),
 );
 
-if (result.status != ScanStatus.verified) {
-  // Show result.issues to the user, or send result.images for manual review.
+if (result.issue == ScanIssue.readerUnavailable) {
+  // The photos are fine: offer to read the same files again.
+} else if (result.status == ScanStatus.failed) {
+  // Ask for a retake: result.issue says why.
+} else {
+  // Fill your form, and highlight result.fieldsToCheck.
 }
 result.dispose();
 ```
@@ -233,7 +239,7 @@ await const IdLens().scanIdCard(
 | Option | Default | What it does |
 |---|---|---|
 | `showTips` | `true` | Shows the page of photo tips before the camera. When `false`, the camera opens straight away. Only for the `scan...` methods. |
-| `requireValidMrz` | `false` | While the MRZ is missing or its check digits fail, the user can only retake. When `false`, the user can continue and you decide what to do with the issues. Only for the `scan...` methods, and not available for the certificate, which has no MRZ. |
+| `requireValidMrz` | `false` | While the MRZ is missing, of the wrong document or its check digits fail, the user can only retake. When `false`, the user can continue and you decide what to do with the result. Only for the `scan...` methods, and not available for the certificate, which has no MRZ. |
 
 ## Results
 
@@ -243,26 +249,111 @@ await const IdLens().scanIdCard(
 | Member | Meaning |
 |---|---|
 | `status` | `verified`, `needsReview`, `failed` or `incomplete` |
-| `issues` | The reasons the scan cannot be fully trusted (`ScanIssue`) |
-| `warnings` | English detail for your logs, such as which value disagrees with the MRZ |
+| `issue` | What is wrong with the photo or the document (`ScanIssue`), or `null` |
+| `fieldsToCheck` | Keys in `fields` the user should look at |
 | `images` | The captured pages (`ScannedImage`: `side`, `file`, `bytes()`). `imageFor(side)` finds one. |
 | `mrz` | The MRZ with a result for every check digit in `checks` (ID card and passport) |
 | `fields` / `toJson()` | The raw field map, and everything as JSON (image paths, not image content) |
-| `diagnostics` | Debug data such as raw OCR text and timing. Not a stable API. |
+| `diagnostics` | Debug data such as raw OCR text, English `warnings` for logs, and timing. Not a stable API. |
 | `dispose()` | Deletes the temporary image files that idlens created |
 
 **You get a result whenever at least one image was captured.** A scan returns
 `null` only when the user leaves before capturing anything, and a
 `ScanException` is thrown only when no image could be captured. Problems with
-reading are never exceptions. They appear as `status` and `issues`, and the
-images are still there to upload.
+reading are never exceptions. They appear as `status`, `issue` and
+`fieldsToCheck`, and the images are still there to upload.
+
+### Handling a result
+
+Your app only has to answer two questions: does the user need to retake, and
+which fields should they look at? `status` answers the first, and
+`fieldsToCheck` the second.
+
+```dart
+switch (result.status) {
+  case ScanStatus.failed:
+    // Ask for a retake. result.issue says why, so you can word the message.
+    // For ScanIssue.readerUnavailable the photos are fine: offer to read the
+    // same files again instead.
+  case ScanStatus.incomplete:
+    // The user left before every page was captured. Resume or start again.
+  case ScanStatus.needsReview:
+    // Show the form and highlight result.fieldsToCheck. If result.issue is
+    // ScanIssue.imageNotClear, you can also suggest a retake.
+  case ScanStatus.verified:
+    // Show the form. Nothing needs checking.
+}
+```
+
+For a field in `fieldsToCheck`, the value tells you why it's there:
+
+- **The value is `null`:** a required field wasn't read. Ask the user to type it.
+- **The value is set:** it was read, but it may be wrong. Ask the user to check it.
+
+### `ScanStatus`
+
+| Value | When | `issue` |
+|---|---|---|
+| `verified` | No issue, and `fieldsToCheck` is empty. For ID cards and passports, every MRZ check digit passed and the printed values agree with the MRZ. | `null` |
+| `needsReview` | The photo isn't clear, or at least one field is in `fieldsToCheck`. | `imageNotClear` or `null` |
+| `failed` | Wrong document, not in the frame, the text reader couldn't start, or processing failed. Also when nothing identifying was read: no MRZ on an ID card or passport, or none of a certificate's required fields. | Always set |
+| `incomplete` | The user left before every page was captured. Nothing was read. | `null` |
+
+A civil registry certificate has no MRZ, so for it `verified` only means the
+photo was good, the required fields were read and the dates agree. It doesn't
+prove the values are correct.
+
+### `ScanIssue`
+
+An issue is about the photo or the document as a whole. A doubt about a single
+value is never an issue: that field goes in `fieldsToCheck` instead.
+
+| Value | Meaning | ID card | Passport | Certificate | Status |
+|---|---|---|---|---|---|
+| `wrongDocument` | An MRZ of a different document type was found. | ✓ | ✓ | – | `failed` |
+| `documentNotInFrame` | The document is missing, too far away or cut off. | ✓ | ✓ | ✓ | `failed` |
+| `processingFailed` | An unexpected error while reading. The images are still returned. | ✓ | ✓ | ✓ | `failed` |
+| `readerUnavailable` | idlens couldn't start its text reader on this phone, for example with too little free storage. The photos are fine: offer to read the same files again rather than a retake. The next read loads the reader again. | ✓ | ✓ | ✓ | `failed` |
+| `imageNotClear` | The photo is too dark, blurry or has glare. Also given when the document is in the frame but its MRZ couldn't be read, or a certificate has none of its required fields. | ✓ | ✓ | ✓ | `needsReview`, or `failed` when nothing identifying was read |
+
+An ID card has two photos, so `issue` is the more serious of the two:
+`wrongDocument`, then `readerUnavailable`, then `processingFailed`, then
+`documentNotInFrame`, then `imageNotClear`.
+
+### `fieldsToCheck`
+
+A field is listed in these cases:
+
+| Case | Value | ID card | Passport | Certificate |
+|---|---|---|---|---|
+| A required field wasn't read | `null` | `arabicName`, `nationalNumber` | – | `nationalNumber`, `name`, `dateOfBirth` |
+| The printed value differs from the MRZ | The MRZ value | `dateOfBirth`, `expiryDate` | `dateOfBirth`, `expiryDate`, `nationalNumber` | – |
+| An MRZ check digit failed | As read | The fields it covers | The fields it covers | – |
+| The dates can't be right | Kept as read | `issueDate` on or after `expiryDate` | `issueDate` on or after `expiryDate` | `dateOfBirth` and `issueDate`, when the birth isn't before the issue |
+| A date isn't a real calendar date | The text as read | ✓ | ✓ | ✓ |
+
+The check digits cover these fields: `documentNumber`, `dateOfBirth`,
+`expiryDate`, and on a passport the personal number (`nationalNumber`). When
+only the composite digit fails, `documentNumber`, `dateOfBirth` and
+`expiryDate` are all listed.
+
+**These cases are never listed.** The field is `null` and the status doesn't
+change:
+
+- An optional field that wasn't read, such as a passport's `placeOfBirth`,
+  `issueDate` or `placeOfIssue`, or a certificate's `motherName`. A passport
+  has no required fields, because the MRZ carries the identity.
+- An ID card `phone` that doesn't have exactly 10 digits.
+
+idlens doesn't judge OCR confidence. A certificate's `confidence` gives a score
+for each field, if your app wants to apply its own limit.
 
 ### Fields
 
-Every field is nullable: a value that could not be read is `null`. Dates are
-real `DateTime` values. When a value appears in both the MRZ and the printed
-text, the MRZ value is used if its own check digit passed, and a printed value
-that disagrees is reported in `warnings`.
+Every field is nullable: a value that couldn't be read is `null`. Dates are
+real `DateTime` values, and a date that isn't a real calendar date is `null`
+(and listed in `fieldsToCheck`). When a value appears in both the MRZ and the
+printed text, the MRZ value is used if its own check digit passed.
 
 **`IdCardResult` and `PassportResult`:** `documentNumber`, `nationalNumber`,
 `arabicName`, `englishName`, `surname`, `givenNames`, `dateOfBirth`, `sex`,
@@ -279,45 +370,49 @@ expiry date).
 `nationalityType`, `profession`, `workAddress`, `motherName`, and `confidence`
 (0 to 1 for each field).
 
-### `ScanStatus`
-
-| Value | Meaning |
-|---|---|
-| `verified` | No issues or warnings. For ID cards and passports, every MRZ check digit passed. |
-| `needsReview` | Fields were read, but something is off: a blurry photo, a failed check digit, or a printed value that disagrees with the MRZ. |
-| `failed` | Wrong document, document not in the frame, no MRZ found, or a processing error. The images are still returned. |
-| `incomplete` | The user left before every page was captured. Nothing was read. |
-
-A civil registry certificate has no MRZ, so for it `verified` only means the
-photo was good and every expected field was read.
-
-### `ScanIssue`
-
-| Value | Meaning |
-|---|---|
-| `mrzNotFound` | No MRZ could be read. |
-| `wrongDocument` | An MRZ of a different document type was found. |
-| `documentNotInFrame` | The document is missing, too far away or cut off. |
-| `imageNotClear` | The photo is too dark, blurry or has glare. |
-| `mrzCheckDigitsFailed` | The MRZ was read, but a check digit failed. `mrz.checks` says which. |
-| `processingFailed` | An unexpected error while reading. The images are still returned. |
+An expired document isn't an issue. Use `isExpired` if your app has a rule for
+it.
 
 ### `ScanException`
+
+A `ScanException` means idlens has no image to give you, so there is no result
+to return. It's never thrown for a problem with reading: once an image exists,
+every problem, including a text reader that can't start
+(`ScanIssue.readerUnavailable`), is reported on the result.
+
+| `reason` | Thrown by | When | What your app can do |
+|---|---|---|---|
+| `permissionDenied` | `scan...` | The user didn't allow camera access, then left the scan screens without capturing anything. | Explain why the camera is needed, and link to the app settings. |
+| `cameraUnavailable` | `scan...` | The camera failed to start, or there's no usable camera, and the user left without capturing anything. | Suggest closing other apps that use the camera, or offer to pick a photo and use `process...`. |
+| `missingSetup` | `scan...` | iOS only: `NSCameraUsageDescription` is missing from `Info.plist`. It's thrown before any screen opens. | Fix the app's setup. This is a developer error, not something to show users. |
+| `imageUnreadable` | `process...` | A file you passed doesn't exist. | Check the file path. A file that exists but isn't a readable image doesn't throw: it gives a `failed` result. |
+
+While the scan screens are open, a camera problem doesn't end the flow: the
+user sees what went wrong and can try again. The exception is thrown only if
+they leave with nothing captured. If they leave after capturing some pages, you
+get a result with the status `incomplete` instead.
 
 ```dart
 try {
   final result = await const IdLens().scanPassport(context);
+  if (result == null) return; // The user left before capturing anything.
+  // Handle the result.
 } on ScanException catch (e) {
-  print(e.reason); // ScanFailureReason.permissionDenied, ...
+  switch (e.reason) {
+    case ScanFailureReason.permissionDenied:
+      // Ask for camera access.
+    case ScanFailureReason.cameraUnavailable:
+      // Suggest trying again, or picking a photo instead.
+    case ScanFailureReason.missingSetup:
+    case ScanFailureReason.imageUnreadable:
+      // A setup or code error: log e.message.
+  }
 }
 ```
 
-| `reason` | When |
-|---|---|
-| `permissionDenied` | The user did not allow camera access and nothing was captured. |
-| `cameraUnavailable` | There is no usable camera, or it failed to start, and nothing was captured. |
-| `missingSetup` | iOS only: `NSCameraUsageDescription` is missing from `Info.plist`. |
-| `imageUnreadable` | A file passed to a `process...` method does not exist. |
+`message` holds English detail for your logs, such as the camera error code or
+the missing file path. Don't show it to users; word your own message from
+`reason`.
 
 ## Accuracy
 

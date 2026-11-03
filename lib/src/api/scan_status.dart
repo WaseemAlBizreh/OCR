@@ -1,17 +1,19 @@
 /// How far a scan can be trusted. Every status comes with the captured images,
 /// so a result is always usable for upload.
 enum ScanStatus {
-  /// Nothing was found wrong: for documents with a machine-readable zone, its
-  /// check digits all passed, and the printed fields agree with it.
+  /// No issue, and nothing in `fieldsToCheck`. For documents with a
+  /// machine-readable zone, its check digits all passed and the printed
+  /// values agree with it. Optional fields that were not read are null.
   verified,
 
-  /// Fields were read, but something is off. See [ScanOutcome.issues] and
-  /// [ScanOutcome.warnings]; some values may be missing or wrong.
+  /// The values were read, but the photo is not clear
+  /// (`ScanIssue.imageNotClear`) or at least one field is in `fieldsToCheck`.
   needsReview,
 
   /// The document could not be read: it is the wrong document, is not in the
-  /// frame, has no readable MRZ, or processing failed. The images are still
-  /// returned.
+  /// frame, nothing identifying was read (no MRZ, or none of a certificate's
+  /// required fields), or processing failed. `issue` says which. The images
+  /// are still returned.
   failed,
 
   /// Capturing stopped before every page of the document was taken, so

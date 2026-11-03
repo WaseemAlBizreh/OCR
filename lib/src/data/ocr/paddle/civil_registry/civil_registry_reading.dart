@@ -4,6 +4,7 @@ class CivilRegistryReading {
     required this.fields,
     this.confidence = const {},
     this.warnings = const [],
+    this.doubtfulFields = const [],
     this.imagePath,
     this.rawText = '',
     this.rawMlKit = '',
@@ -16,6 +17,9 @@ class CivilRegistryReading {
   /// OCR confidence (0..1) of the line each value came from.
   final Map<String, double> confidence;
   final List<String> warnings;
+
+  /// Keys in [fields] whose value was read but may be wrong.
+  final List<String> doubtfulFields;
   final String? imagePath;
 
   /// What OCR read before parsing. Debug aid.
@@ -31,6 +35,7 @@ class CivilRegistryReading {
     'fields': fields,
     'confidence': confidence,
     'warnings': warnings,
+    'doubtfulFields': doubtfulFields,
     if (imagePath != null) 'image': imagePath,
     if (rawText.isNotEmpty) 'rawText': rawText,
     if (rawMlKit.isNotEmpty) 'rawMlKit': rawMlKit,

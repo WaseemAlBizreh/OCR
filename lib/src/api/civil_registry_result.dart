@@ -4,13 +4,14 @@ import 'package:idlens/src/domain/document_kind.dart';
 /// The result of scanning a civil registry certificate (A4). The certificate
 /// has no MRZ, so [ScanOutcome.mrz] is always null and there are no check
 /// digits: `verified` here means only that nothing was found wrong with the
-/// photo and every expected field was read.
+/// photo and the national number, name and date of birth were read. It does
+/// not prove the values are correct; see [confidence].
 class CivilRegistryResult extends ScanOutcome {
   /// Creates a result. Built by idlens; apps read it.
   const CivilRegistryResult({
     required super.status,
-    super.issues,
-    super.warnings,
+    super.issue,
+    super.fieldsToCheck,
     super.images,
     super.diagnostics,
     required super.scannedAt,

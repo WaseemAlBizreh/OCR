@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
@@ -5,7 +6,6 @@ import 'package:idlens/src/api/scan_exception.dart';
 import 'package:idlens/src/api/scan_options.dart';
 import 'package:idlens/src/api/scan_outcome.dart';
 import 'package:idlens/src/domain/document_kind.dart';
-import 'package:idlens/src/domain/scan_issue.dart';
 import 'package:idlens/src/presentation/scan_issue_text.dart';
 import 'package:idlens/src/presentation/widgets/card_camera_page.dart';
 import 'package:idlens/src/scan_runner.dart';
@@ -166,7 +166,11 @@ class _IdentityFlowPageState extends State<IdentityFlowPage> {
         if (issue != null) {
           if (!mounted) return;
           setState(() => _busyLabel = null);
-          if (!await _confirmContinue(issue, side: side)) return;
+          final go = await _confirmContinue(
+            ScanNotice.forIssue(issue),
+            side: side,
+          );
+          if (!go) return;
           setState(() => _busyLabel = 'Scanning document...');
         }
       }
@@ -189,14 +193,16 @@ class _IdentityFlowPageState extends State<IdentityFlowPage> {
       };
       if (!mounted) return;
 
-      final alreadyShown = check?.issue;
-      final pending = [
-        for (final issue in outcome.issues)
-          if (issue != alreadyShown) issue,
-      ];
-      if (pending.isNotEmpty) {
+      final notice = ScanNotice.after(outcome, alreadyShown: check?.issue);
+      if (notice != null) {
         setState(() => _busyLabel = null);
-        if (!await _confirmContinue(pending.first)) return;
+        final blocked =
+            widget.options.requireValidMrz && ScanNotice.hasMrzProblem(outcome);
+        if (!await _confirmContinue(notice, blocked: blocked)) {
+          // The photos were fine: read them again rather than retaking.
+          if (notice.readAgain && mounted) unawaited(_scan());
+          return;
+        }
       }
       if (!mounted) return;
       _handedOff = true;
@@ -210,20 +216,24 @@ class _IdentityFlowPageState extends State<IdentityFlowPage> {
   }
 
   /// Tells the user what is wrong. Returns true when they choose to continue
-  /// anyway, false when they retake. With `requireValidMrz`, MRZ problems
-  /// leave only Retake.
-  Future<bool> _confirmContinue(ScanIssue issue, {DocumentSide? side}) async {
-    final blocked = widget.options.requireValidMrz && issue.isMrzProblem;
+  /// anyway, false when they retake (or try again, when the photos are fine).
+  /// When [blocked] (an MRZ problem with `requireValidMrz`), only Retake is
+  /// offered.
+  Future<bool> _confirmContinue(
+    ScanNotice notice, {
+    DocumentSide? side,
+    bool blocked = false,
+  }) async {
     final go = await showDialog<bool>(
       context: context,
       barrierDismissible: false,
       builder: (context) => AlertDialog(
         title: Text(
           side == null || widget.kind.sides.length < 2
-              ? issue.title
-              : '${side.label}: ${issue.title}',
+              ? notice.title
+              : '${side.label}: ${notice.title}',
         ),
-        content: Text(issue.message),
+        content: Text(notice.message),
         actions: [
           if (!blocked)
             TextButton(
@@ -232,7 +242,7 @@ class _IdentityFlowPageState extends State<IdentityFlowPage> {
             ),
           FilledButton(
             onPressed: () => Navigator.pop(context, false),
-            child: const Text('Retake'),
+            child: Text(notice.readAgain ? 'Try again' : 'Retake'),
           ),
         ],
       ),

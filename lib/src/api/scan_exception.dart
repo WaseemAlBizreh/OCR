@@ -11,14 +11,14 @@ enum ScanFailureReason {
   /// what to add.
   missingSetup,
 
-  /// An image given to a `process*` method is missing or is not a readable
-  /// image file.
+  /// A file given to a `process*` method does not exist. A file that exists
+  /// but is not a readable image does not throw: it gives a `failed` result.
   imageUnreadable,
 }
 
 /// Thrown only when there is nothing to return: no image exists to put in a
 /// result. Anything that goes wrong after an image exists is reported through
-/// the result's `status` and `issues` instead.
+/// the result's `status`, `issue` and `fieldsToCheck` instead.
 class ScanException implements Exception {
   /// Creates an exception for [reason].
   const ScanException(this.reason, [this.message]);

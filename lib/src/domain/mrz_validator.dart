@@ -1,23 +1,21 @@
 import 'package:idlens/src/domain/document_kind.dart';
 import 'package:idlens/src/domain/mrz_data.dart';
-import 'package:idlens/src/domain/scan_issue.dart';
 
-/// Decides only whether the image holds the MRZ of the expected document: one
-/// must exist, and its format must match. Missing or wrong fields inside it
-/// (dates, expiry, check digits) are deliberately not judged here.
-///
-/// Returns a [ScanIssue] code, or null when the MRZ is acceptable.
+/// Decides only whether a found MRZ belongs to the expected document: its
+/// format must match. Missing or wrong values inside it (dates, expiry, check
+/// digits) are deliberately not judged here.
 class MrzValidator {
   const MrzValidator();
 
-  ScanIssue? validate(MrzData? mrz, DocumentKind expected) {
-    if (mrz == null) return ScanIssue.mrzNotFound;
+  /// True when [mrz] was found but is of another document type than
+  /// [expected]. A missing MRZ is not a wrong document.
+  bool isWrongDocument(MrzData? mrz, DocumentKind expected) {
+    if (mrz == null) return false;
     final expectedFormat = switch (expected) {
       DocumentKind.sudanId => MrzFormat.td1,
       DocumentKind.passport => MrzFormat.td3,
       DocumentKind.civilRegistryCertificate => null,
     };
-    if (expectedFormat == null || mrz.format == expectedFormat) return null;
-    return ScanIssue.wrongDocument;
+    return expectedFormat != null && mrz.format != expectedFormat;
   }
 }

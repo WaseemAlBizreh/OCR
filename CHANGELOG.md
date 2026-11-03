@@ -1,3 +1,40 @@
+## Unreleased
+
+**Breaking:** the result says what to do in two members instead of reading
+text.
+
+- `issues` (a list) is now `issue`: one `ScanIssue` or `null`, always set when
+  the status is `failed`.
+- `warnings` is removed from the result. Fields to look at are in the new
+  `fieldsToCheck`, and the English text is in `diagnostics['warnings']`, for
+  logs only.
+- `ScanIssue.mrzNotFound` is removed. An MRZ that can't be read gives
+  `imageNotClear`, or `documentNotInFrame` when nothing is in the frame, and
+  the status is still `failed`.
+- `ScanIssue.mrzCheckDigitsFailed` is removed. The fields a failed check digit
+  covers are listed in `fieldsToCheck`.
+- `ScanOutcome.statusFor` is removed.
+- A certificate with none of its required fields read is now `failed`.
+- A date that can't be right is kept as read and listed in `fieldsToCheck`. That
+  covers an ID card or passport issue date on or after the expiry date, which
+  used to be cleared with no warning, and a certificate birth date that isn't
+  before its issue date, which used to be cleared.
+- Only required fields lower the status. A certificate needs its national
+  number, name and date of birth; an ID card needs its Arabic name and national
+  number; a passport needs nothing beyond its MRZ. Any other field not read is
+  `null` and not listed, so more scans return `verified`.
+- An ID card phone number without ten digits is now `null`, instead of a
+  partial number that caused `needsReview`.
+- README: a guide to handling a result, with every issue and every case that
+  lists a field, for each document.
+- New `ScanIssue.readerUnavailable`: the text reader couldn't start on the
+  phone, for example with too little free storage. The status is `failed`, the
+  photos are fine, and reading them again may work. The built-in flow offers
+  "Try again" for it instead of "Retake".
+- Fixed: a text reader that failed to load made every later scan fail until
+  the app restarted. A failed load is now retried on the next read, anything
+  partly loaded is closed, and scans that start together share one load.
+
 ## 0.1.3
 
 - Allow `google_mlkit_text_recognition` 0.15.1 again, so idlens can be installed

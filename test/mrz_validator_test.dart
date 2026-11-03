@@ -2,7 +2,6 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:idlens/src/data/mrz/mrz_parser.dart';
 import 'package:idlens/src/domain/document_kind.dart';
 import 'package:idlens/src/domain/mrz_validator.dart';
-import 'package:idlens/src/domain/scan_issue.dart';
 
 void main() {
   final parser = MrzParser(clock: () => DateTime(2026, 10, 28));
@@ -16,17 +15,14 @@ void main() {
       '9209231M2705169SDN<<<<<<<<<<<4\n'
       'OSMAN<<MERGHANI<MEKKI<MERGHANI\n';
 
-  test('no MRZ gives the mrzNotFound code', () {
-    expect(
-      validator.validate(null, DocumentKind.passport),
-      ScanIssue.mrzNotFound,
-    );
+  test('a missing MRZ is not a wrong document', () {
+    expect(validator.isWrongDocument(null, DocumentKind.passport), isFalse);
   });
 
   test('an expired document is still accepted', () {
     // The ICAO specimen expired in 2012.
     final mrz = parser.parseText(passportText);
-    expect(validator.validate(mrz, DocumentKind.passport), isNull);
+    expect(validator.isWrongDocument(mrz, DocumentKind.passport), isFalse);
   });
 
   group('wrong document', () {
@@ -34,21 +30,15 @@ void main() {
     final idCard = parser.parseText(idText);
 
     test('a passport MRZ on an ID scan', () {
-      expect(
-        validator.validate(passport, DocumentKind.sudanId),
-        ScanIssue.wrongDocument,
-      );
+      expect(validator.isWrongDocument(passport, DocumentKind.sudanId), isTrue);
     });
 
     test('an ID MRZ on a passport scan', () {
-      expect(
-        validator.validate(idCard, DocumentKind.passport),
-        ScanIssue.wrongDocument,
-      );
+      expect(validator.isWrongDocument(idCard, DocumentKind.passport), isTrue);
     });
 
     test('the matching document passes', () {
-      expect(validator.validate(idCard, DocumentKind.sudanId), isNull);
+      expect(validator.isWrongDocument(idCard, DocumentKind.sudanId), isFalse);
     });
   });
 }

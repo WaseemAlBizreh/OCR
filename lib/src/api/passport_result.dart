@@ -6,8 +6,8 @@ class PassportResult extends IdentityDocumentResult {
   /// Creates a result. Built by idlens; apps read it.
   const PassportResult({
     required super.status,
-    super.issues,
-    super.warnings,
+    super.issue,
+    super.fieldsToCheck,
     super.images,
     super.diagnostics,
     required super.scannedAt,

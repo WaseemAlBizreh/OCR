@@ -1,0 +1,695 @@
+# idlens: Bugs to Fix in the Package
+
+These bugs are in the `idlens` package ([`WaseemAlBizreh/OCR`](https://github.com/WaseemAlBizreh/OCR)), not in the MTN app. They were found by reading idlens 0.1.3 while reviewing the SIM registration OCR on 2026-11-02. Bugs on the app side are in [`SIM_REGISTRATION_OCR_BUGS.md`](SIM_REGISTRATION_OCR_BUGS.md).
+
+**How this was checked:** by reading the source. Nothing was run on a device, and I didn't run idlens' own tests. I1 matches a real A4 scan where the notice appeared with one value missing, though the missing field wasn't confirmed. File paths are relative to `lib/src/` in the package.
+
+| # | Bug | Priority | Suggested release |
+|---|---|---|---|
+| [I1](#i1-a-missing-field-is-treated-as-a-value-to-review) | A missing field is treated as a value to review | **Fixed, not released** | Next release (breaking API change) |
+| [I2](#i2-a-model-that-fails-to-load-breaks-every-later-scan) | A model that fails to load breaks every later scan | **Fixed, not released** | Next release |
+| [I3](#i3-image-work-runs-on-the-ui-isolate) | Image work runs on the UI isolate | Measure first | 0.1.4 if it freezes |
+| [I4](#i4-some-certificate-values-have-no-confidence-score) | Some certificate values have no confidence score | Medium | 0.1.4 |
+| [I5](#i5-an-out-of-frame-id-front-fails-the-whole-scan) | An out-of-frame ID front fails the whole scan | Medium | 0.2.0 |
+| [I6](#i6-issues-dont-say-which-side-of-the-id-caused-them) | Issues don't say which side of the ID caused them | Low | 0.2.0 |
+| [I7](#i7-a-running-read-cant-be-cancelled) | A running read can't be cancelled | Low | Later |
+| [I8](#i8-a-document-far-from-the-camera-can-be-accepted) | A document far from the camera can be accepted | High | 0.1.4 |
+| [I9](#i9-processcivilregistry-doesnt-flatten-the-page) | `processCivilRegistry` doesn't flatten the page | Low once I10 ships | 0.1.4 |
+| [I10](#i10-apps-have-to-build-their-own-camera) | Apps have to build their own camera, with no Arabic support | High, comes before the accuracy test | 0.1.4 |
+| [I11](#i11-scan-has-its-own-path-and-no-clear-role) | `scan*` has its own path and no clear role | Medium | 0.1.4 and 0.2.0 |
+
+## Recommended order
+
+1. **Release 0.1.4 with I2, I4, I8, I9, I10 and the shared camera from I11.** None of them breaks the API, so the app can upgrade with `flutter pub upgrade`. I10 only adds to it. Include I3 if phone testing shows a freeze.
+2. **Release 0.2.0 with I1, I5, I6 and the option cleanup from I11.** These change results, their types or method signatures, so they fit in one breaking release. The app's `^0.1.3` constraint won't pick up 0.2.0, so its `pubspec.yaml` must change too.
+3. **Decide on I7 later,** once read times are measured. The app can skip stale queued reads without it.
+
+---
+
+## I1. A missing field is treated as a value to review
+
+- [x] Fixed in idlens (2026-11-02, reworked 2026-11-03, not committed or released)
+- [ ] Adopted in the app
+
+**Summary of the fix**
+
+The first fix (2026-11-02) only shortened the required-field lists. On
+2026-11-03 the result was simplified so that apps never read warning text. This
+changes the API, so the app must update its code when it upgrades.
+
+The result now says two things: whether to retake (`status` and `issue`) and
+which fields to look at (`fieldsToCheck`).
+
+| Before | Now |
+|---|---|
+| `issues` (list) | `issue`: one `ScanIssue` or `null`, always set when `failed` |
+| `warnings` (text, also drove the status) | Removed. `fieldsToCheck` lists field keys, and the text moves to `diagnostics['warnings']` for logs |
+| `mrzNotFound` | Removed. Gives `imageNotClear` (or `documentNotInFrame`), and still `failed` |
+| `mrzCheckDigitsFailed` | Removed. The fields the failed digits cover go in `fieldsToCheck` |
+| An impossible issue date (ID, passport) cleared with no warning | Kept as read, and listed |
+| A certificate birth date not before its issue date cleared | Kept as read, with both dates listed |
+| A certificate with nothing readable was `needsReview` | `failed` with `imageNotClear` |
+
+A field in `fieldsToCheck` with a `null` value is a required field that wasn't
+read. With a value, it was read but may be wrong. Optional fields that weren't
+read are `null` and never listed.
+
+| Status | When |
+|---|---|
+| `failed` | `wrongDocument`, `documentNotInFrame` or `processingFailed`, or nothing identifying read (no MRZ, or none of a certificate's 3 required fields) |
+| `needsReview` | `imageNotClear`, or `fieldsToCheck` isn't empty |
+| `verified` | Neither |
+
+**Decisions:** impossible values are kept rather than cleared. idlens doesn't
+judge OCR confidence yet: a `lowConfidence` rule waits for the accuracy test to
+set the limit. Which side of the ID caused an issue stays in
+[I6](#i6-issues-dont-say-which-side-of-the-id-caused-them).
+
+**Files changed:** new `api/scan_review.dart` (all the rules), `scan_outcome.dart`,
+the three result classes, `scan_status.dart`, `domain/scan_issue.dart`,
+`domain/mrz_validator.dart`, `domain/identity_scan_result.dart`,
+`scan_runner.dart`, `data/identity_scan_service.dart` (the shared ID service,
+which records doubtful fields), the Paddle passport scan service, the
+certificate parser, reading and scan service, the built-in flow's dialogs
+(`presentation/scan_issue_text.dart`, `identity_flow_page.dart`), the example
+app, the README, `doc/how_it_works.md` and `CHANGELOG.md`. The classic
+`SudanCardParser` and `PassportVizParser` weren't touched.
+
+**How it was checked:** `flutter analyze` reports no issues for the package or
+the example. 95 tests in 8 files pass (including the new
+`test/scan_review_test.dart`), run in a scratch Dart package because
+`flutter test` needs a native OpenCV build. Nothing was tried on a device.
+
+**Still needed in the MTN app:** see the MTN issue written for this change.
+
+**What happens**
+
+`ScanOutcome.statusFor` returns `needsReview` when `warnings` isn't empty, and a missing field adds the warning `Missing field: <name>`. The app then tells the dealer "Some values may be wrong. Please check them."
+
+| Document | A missing one of these triggers it | Where |
+|---|---|---|
+| Certificate | All 12: registry office, issue date, national number, name, place of birth, date of birth, marital status, gender, nationality type, profession, work address, mother's name | `data/ocr/paddle/civil_registry/civil_registry_parser.dart` |
+| Passport page | Place of birth, issue date, place of issue | `data/ocr/paddle/passport/paddle_passport_parser.dart` |
+| ID front | Arabic name, national number | `data/ocr/paddle/paddle_sudan_card_parser.dart` |
+
+An incomplete phone number on the ID front also triggers it, and the form doesn't use the phone number.
+
+**Why it matters**
+
+- A missing value isn't a wrong value, so the message is false.
+- The form doesn't use five certificate fields or the passport's place of issue, yet they still trigger it. A missing mother's name warns the dealer even when the form is correct.
+- If most certificates show the notice, dealers will learn to ignore it, including when it's real.
+
+**Original suggestion (not used, see the summary above)**
+
+Report missing fields separately, and make warnings structured so that apps don't have to match text:
+
+```dart
+class ScanOutcome {
+  final ScanStatus status;
+  final List<ScanIssue> issues;
+  final List<ScanWarning> warnings; // Real doubts about a value.
+  final List<String> missingFields; // Keys in `fields` that weren't read.
+}
+
+enum ScanWarningKind { mrzMismatch, inconsistentDates, incompleteValue }
+
+class ScanWarning {
+  const ScanWarning(this.kind, this.field, this.message);
+
+  final ScanWarningKind kind;
+  final String? field; // Key in `fields`, or null for the whole document.
+  final String message; // For debugging. Don't show it to users.
+}
+```
+
+Update the docs for `ScanStatus.verified`. On a certificate it currently also means "every expected field was read", and it should mean "nothing that was read looks wrong". `missingFields` then answers whether the read was complete.
+
+**Expected behaviour after the fix**
+
+| Scan | `status` | `missingFields` | App shows the notice? |
+|---|---|---|---|
+| Certificate, mother's name not read | `verified` | `motherName` | No |
+| Certificate, name not read | `verified` | `name` | No. The field stays empty, and the form requires it before Next |
+| Certificate, birth date not before issue date | `needsReview` | `dateOfBirth`, which idlens clears | Yes |
+| Passport, place of issue not read | `verified` | `placeOfIssue` | No |
+| Passport or ID, printed date differs from the MRZ | `needsReview` | None | Yes |
+| ID front, phone incomplete | `needsReview`, with `field: phone` | None | No. The app ignores warnings for fields it doesn't use |
+| Any document, unclear photo | `needsReview` | Any | Yes |
+| Passport or ID, MRZ check digits fail | `needsReview` | Any | Yes |
+
+**What to change in the app after the fix**
+
+- Upgrade `pubspec.yaml` to the new version.
+- In [`document_reader_service.dart`](../../lib/core/services/document_reader/document_reader_service.dart), add a list of the fields the form uses for each document. Treat a result as needing review only when it has an issue, a warning for the whole document, or a warning for one of those fields.
+- Add service tests for the rows in the table above.
+- Do the follow-up in [B2](SIM_REGISTRATION_OCR_BUGS.md#b2-the-needs-review-notice-triggers-on-missing-fields): also show the notice on the subscriber info step.
+
+---
+
+## I2. A model that fails to load breaks every later scan
+
+- [x] Fixed in idlens (2026-11-03, not committed or released)
+- [ ] Adopted in the app
+
+**Summary of the fix**
+
+1. **Loading** (`data/ocr/paddle/paddle_ocr_engine.dart`):
+   - Every read waits on one shared load, so reads that start together don't
+     load twice or see a half-loaded reader.
+   - A failed load is forgotten, so the next read loads again and works once
+     the cause, such as low storage, is gone. No app restart is needed.
+   - Anything that loaded before the failure is closed.
+   - The detector, recognizer and decoder are kept as one value, so they can't
+     get out of step.
+   - The unused `dispose()` was removed.
+2. **New issue `ScanIssue.readerUnavailable`.** It means "idlens couldn't start
+   its text reader on this phone", and the status is `failed`. The photos are
+   fine, so the app should offer to read the same files again, not a retake.
+   The real error stays in `diagnostics['error']` for logs. Any other error
+   during reading is still `processingFailed`.
+3. **Passport MRZ reader.** It used to ignore any Paddle error and move on. It
+   now passes this one through, so a scan doesn't try to load the reader again
+   several times.
+4. **Built-in flow.** The dialog says "The scanner couldn't start. Your photos
+   are fine. Try again in a moment. If it keeps happening, free up some storage
+   or restart the app." Its button says "Try again" and reads the same photos
+   again.
+
+| Situation | Before | Now |
+|---|---|---|
+| The load fails once | Every later scan fails until restart | That scan is `failed` with `readerUnavailable` |
+| The dealer tries again after freeing space | Still fails | Works |
+| Two scans start together | One may fail, and the detector loads twice | They share one load |
+| Any other error while reading | `processingFailed` | `processingFailed` |
+
+**Files changed:** `paddle_ocr_engine.dart`, `paddle_passport_mrz_reader.dart`,
+`scan_runner.dart`, `domain/scan_issue.dart`, `api/scan_review.dart` (issue
+order), `presentation/scan_issue_text.dart`, `identity_flow_page.dart`, the
+README issue table, `doc/how_it_works.md`, `CHANGELOG.md`,
+`test/scan_review_test.dart`, and the new `test/paddle_ocr_engine_test.dart`.
+
+**How it was checked:**
+- `flutter analyze` reports no issues for the package or the example.
+- 77 tests pass in a scratch Dart package. They include `scan_review_test.dart`
+  and 4 checks of the retry rules on a copy of the loading logic without ONNX.
+- `test/paddle_ocr_engine_test.dart` uses a fake loader, but it imports OpenCV,
+  so it has **not been run yet**. It needs the full `flutter test` build and
+  more free disk space.
+- Nothing was tried on a phone. To check on a device: fill the storage, scan,
+  see the dialog, free some space, then tap "Try again" without restarting.
+
+**Still needed in the MTN app**
+
+- Map `ScanIssue.readerUnavailable` to a new `DocumentReadProblem.readerUnavailable`.
+- Show its own dialog:
+
+  | | English | Arabic |
+  |---|---|---|
+  | Title | The scanner couldn't start | تعذّر تشغيل الماسح |
+  | Message | Your photos are fine. Try again in a moment. If it keeps happening, free up some storage on the phone or restart the app, or enter the details manually. | صورك سليمة. حاول مرة أخرى بعد قليل. إذا تكرر ذلك، أفرغ بعض المساحة على الهاتف أو أعد تشغيل التطبيق، أو أدخل البيانات يدوياً. |
+  | Button 1 | Try again | حاول مرة أخرى |
+  | Button 2 | Enter manually | أدخل البيانات يدوياً |
+
+- "Try again" reads the same photos again without opening the camera. The
+  dialog doesn't show the photo-example picture.
+- The Arabic text needs a check by a native speaker.
+- Keep the read queue, because reads are heavy, but update its comment. Remove
+  the "keep reads behind the service queue" entry from `docs/GOTCHAS.md`.
+- Close B20 in `SIM_REGISTRATION_OCR_BUGS.md`. The retry button also covers
+  part of B24.
+
+**What happens**
+
+In `data/ocr/paddle/paddle_ocr_engine.dart`, `_ensureLoaded` returns early if `_det` is set, and assigns `_det`, `_rec` and `_decoder` one at a time. Two things can go wrong:
+
+- **Failed load:** if `_rec` or the dictionary fails after `_det` loads, later calls skip loading and reach `_rec!` or `_decoder!` while they're null.
+- **Overlapping first reads:** a second read can see `_det` set while `_rec` is still loading.
+
+**Why it matters**
+
+One temporary failure, such as low memory, makes every scan fail until the app restarts. The dealer only sees that reading failed. The app runs one read at a time just to avoid the overlap.
+
+**Original suggestion (used with changes, see the summary above)**
+
+Keep one shared load, and clear it on failure so the next read can retry:
+
+```dart
+Future<void>? _loading;
+
+Future<void> _ensureLoaded() {
+  return _loading ??= _load().catchError((Object error) {
+    _loading = null; // The next read tries again.
+    throw error;
+  });
+}
+
+Future<void> _load() async {
+  final ort = OnnxRuntime();
+  final det = await ort.createSessionFromAsset(_detAsset);
+  try {
+    final rec = await ort.createSessionFromAsset(_recAsset);
+    final dict = await rootBundle.loadString(_dictAsset);
+    _det = det;
+    _rec = rec;
+    _decoder = CtcDecoder([/* Built from dict, as today. */]);
+  } catch (_) {
+    await det.close();
+    rethrow;
+  }
+}
+```
+
+`close()` must also clear `_loading`. If `rec` can load and the dictionary still fail, close `rec` too.
+
+**Expected behaviour after the fix**
+
+- A failed load fails only that scan, with `ScanIssue.processingFailed`.
+- The next scan tries to load again, and works if the cause has passed.
+- Overlapping first reads share one load, and neither sees a half-loaded model.
+
+**What to change in the app after the fix**
+
+- Upgrade to 0.1.4.
+- Remove the "keep reads behind the service queue" entry from [`docs/GOTCHAS.md`](../GOTCHAS.md).
+- Keep the queue, because reads are heavy, but update its comment in `document_reader_service.dart`. The timeout in B6 is still needed.
+- Close [B20](SIM_REGISTRATION_OCR_BUGS.md#b20-a-model-that-fails-to-load-breaks-every-later-scan).
+
+---
+
+## I3. Image work runs on the UI isolate
+
+- [ ] Measured on a low-end phone
+- [ ] Fixed in idlens, if needed
+
+**What happens**
+
+idlens has no `compute` or `Isolate` calls. It runs synchronous OpenCV calls such as `cv.imread`, `cv.resize` and `cv.cvtColor` in `data/ocr/paddle/paddle_ocr_engine.dart`, `data/image/image_ops.dart` and `data/ocr/paddle/passport/paddle_passport_mrz_reader.dart`. These calls run on the isolate that called them, which in the app is the UI isolate.
+
+**Why it matters**
+
+The "Reading document..." spinner and the rest of the UI may stop during a read, especially on low-end phones. This hasn't been measured.
+
+**Recommended fix**
+
+1. Measure dropped frames and scan time on a low-end Android phone. Don't change anything if it's acceptable.
+2. If it freezes, move the image work to a background isolate or use `opencv_dart`'s async calls where they exist. Check first whether `flutter_onnxruntime` calls must stay on the main isolate, because that decides how far the work can move.
+
+**Expected behaviour after the fix**
+
+- The spinner keeps moving, and the page stays responsive during a read.
+- Results don't change for the same photo.
+- `process*` method signatures don't change.
+
+**What to change in the app after the fix**
+
+- Upgrade idlens. No code change should be needed.
+- Add scan time and freezing to the [`docs/testing/DEVICE_SMOKE.md`](../testing/DEVICE_SMOKE.md) checks, using a low-end phone.
+- Set the B6 timeout from the measured scan times.
+- Close [B19](SIM_REGISTRATION_OCR_BUGS.md#b19-reading-may-freeze-the-ui).
+
+---
+
+## I4. Some certificate values have no confidence score
+
+- [ ] Fixed in idlens
+- [ ] Adopted in the app
+
+**What happens**
+
+`CivilRegistryResult.confidence` is documented as the score for each field, but only values found through their label get one. These values appear in `fields` with no score:
+
+- A national number found by `_unlabelledNumber`.
+- A date found by `_dateFallback`.
+- A value found by the row re-read in `civil_registry_scan_service.dart`, which updates `fields` but keeps `page.confidence`.
+
+**Why it matters**
+
+The app treats a missing score as 0 and drops the value. So the extra work idlens does to recover these values is thrown away, and the dealer has to type them.
+
+**Recommended fix**
+
+Record the score of the line each value came from, in all three paths. Add to the parser tests that every non-null field has a score, except values that are copied from elsewhere, if any.
+
+**Expected behaviour after the fix**
+
+- Every non-null value in `fields` has an entry in `confidence`.
+- A recovered value with a high score fills the form.
+- A recovered value with a low score is still left out by the app's 60% limit.
+
+**What to change in the app after the fix**
+
+- Upgrade to 0.1.4.
+- Keep `trusted` in `fromCertificate` as it is, because it will now work as intended.
+- Add a service test for a recovered value above and below the limit.
+- Review the 60% limit against the real accuracy test.
+- Close [B13](SIM_REGISTRATION_OCR_BUGS.md#b13-some-good-certificate-values-are-thrown-away).
+
+---
+
+## I5. An out-of-frame ID front fails the whole scan
+
+- [ ] Fixed in idlens
+- [ ] Adopted in the app
+
+**What happens**
+
+In `scan_runner.dart`, `idCard` passes the front photo's issue into `_judge`. `documentNotInFrame` is in `_unreadable` in `api/scan_outcome.dart`, so the status becomes `failed`, even when the back's MRZ is valid and its values were read.
+
+**Why it matters**
+
+The MRZ is the most reliable data on the card, and its check digits can prove it was read correctly. A slightly cut-off front currently sends a `failed` result, and the app discards everything.
+
+**Recommended fix**
+
+Return `failed` for a front framing problem only when the front gave no values and the MRZ isn't valid. Otherwise return `needsReview`, and keep the issue so that the app can ask for a retake.
+
+**Expected behaviour after the fix**
+
+| Front | Back MRZ | `status` |
+|---|---|---|
+| Out of frame, some values read | Valid | `needsReview` |
+| Out of frame, nothing read | Valid | `needsReview` |
+| Out of frame, nothing read | Not found | `failed` |
+| In frame | Valid | `verified`, if nothing else is wrong |
+
+**What to change in the app after the fix**
+
+- Upgrade to 0.2.0.
+- Make sure the `documentNotInFrame` dialog still offers a retake when the form is filled.
+- Decide [D3](SIM_REGISTRATION_OCR_BUGS.md#part-3-decisions-needed), which covers the other failed scans that still return values. This fix doesn't settle B8 by itself.
+- Update the service tests for an ID with an out-of-frame front.
+
+---
+
+## I6. Issues don't say which side of the ID caused them
+
+- [ ] Fixed in idlens
+- [ ] Adopted in the app
+
+**What happens**
+
+`issues` is a flat list of `ScanIssue`, so an unclear or out-of-frame result doesn't say whether the front or back caused it.
+
+**Why it matters**
+
+The app has to ask the dealer to retake both sides, even if one was fine.
+
+**Recommended fix**
+
+Add a way to look up the side without changing `issues`:
+
+```dart
+final Map<DocumentSide, List<ScanIssue>> issuesBySide;
+```
+
+Fill it from the existing front and back checks.
+
+**Expected behaviour after the fix**
+
+- A blurry back on an ID gives `issuesBySide[DocumentSide.back]` containing `imageNotClear`.
+- `issues` still lists every issue, so existing code keeps working.
+- A passport or certificate reports its only page.
+
+**What to change in the app after the fix**
+
+- Upgrade to 0.2.0.
+- Pass the sides through `ScannedDocumentData`.
+- Make `_retake` in [`sim_scan_form.dart`](../../lib/features/sim/presentation/widgets/sim_scan_form.dart#L441) reopen the camera for only the affected side.
+- Close [B26](SIM_REGISTRATION_OCR_BUGS.md#b26-retaking-an-unclear-id-asks-for-both-sides).
+
+---
+
+## I7. A running read can't be cancelled
+
+- [ ] Decided after measuring read times
+
+**What happens**
+
+`processIdCard`, `processPassport` and `processCivilRegistry` have no cancel option. Once started, a read runs to the end.
+
+**Why it matters**
+
+If the dealer retakes a photo during a read, the old read keeps using CPU and memory, and the new read waits for it.
+
+**Recommended fix**
+
+First, have the app skip queued reads that are already stale, which needs no idlens change. If retakes are still slow on a low-end phone, add an optional token that's checked between stages:
+
+```dart
+Future<IdCardResult> processIdCard({
+  required File front,
+  required File back,
+  ScanCancelToken? cancelToken,
+});
+```
+
+**Expected behaviour after the fix**
+
+- A cancelled read stops at the next stage, such as between the front and back. A native call already running finishes first.
+- It returns a clear cancelled result, which the app ignores.
+- A new read starts soon after the cancel.
+
+**What to change in the app after the fix**
+
+- Pass the token from `read` in `document_reader_service.dart`.
+- Call `cancel` from `_cancelRead` in the cubit.
+- Close [B18](SIM_REGISTRATION_OCR_BUGS.md#b18-old-reads-still-run-after-being-cancelled).
+
+---
+
+## I8. A document far from the camera can be accepted
+
+- [ ] Coverage values collected from real far photos
+- [ ] Fixed in idlens
+- [ ] Re-tested in the app
+
+**What happens**
+
+Seen on a device: A4 pages and ID backs photographed from far away are sometimes accepted.
+
+`ImageQualityChecker._coverage` in `data/image/image_quality_checker.dart` decides whether a document is too far. It finds the largest bright region in the photo and returns the share of the frame taken by that region's bounding box. `ImageQuality.problem` reports `documentNotInFrame` below `minDocumentCoverage = 0.6`.
+
+That measures the bright region, not the document, so it can pass a far document:
+
+- **Light background:** on a light desk or wall, the background can be the largest bright region, or join the document into one region.
+- **No clear region:** it returns 1 by design, which means "not far".
+- **Bounding box:** one bright object near a corner makes the box much larger than the document.
+
+The `ImageQuality` comments also call its limits provisional, tuned from one bad photo. A separate check, `PassportFrameCheck`, only detects text cut off at the edges, not a document that's too small.
+
+**The app's box isn't the cause**
+
+The app's box uses the same numbers as idlens' camera:
+
+| Value | idlens | App |
+|---|---|---|
+| Box width | 92% of the view | 92% of the view |
+| ID shape | 85.6 / 54 | 85.6 / 54 |
+| Passport shape | 125 / 88 | 125 / 88 |
+| A4 shape | 210 / 297 | 210 / 297 |
+| MRZ guide, ID | 0.34 | 0.34 |
+| MRZ guide, passport | 0.25 | 0.25 |
+| MRZ guide inset | 8 | 8 |
+| Extra MRZ crop | 6% | 6% |
+
+The rest of the camera differs: see [B27](SIM_REGISTRATION_OCR_BUGS.md#b27-the-apps-camera-skips-steps-from-idlens-camera). None of those differences changes how `_coverage` measures a photo. Scanning from far away through idlens' own `scan*` screens would confirm this.
+
+**Why it matters**
+
+A small document means less detail for reading and a poor image for the backend's KYC record. An ID back with a valid MRZ is still safe for data, because check digits prove the values. A certificate has no check digits, so a far photo risks misread values with nothing to catch them except the confidence limit.
+
+**Recommended fix**
+
+1. Collect values first. `documentCoverage` is already in the result's `diagnostics`, so compare good and far photos on light and dark backgrounds.
+2. Measure the document from what was read, not from brightness:
+   - **ID back and passport:** use the MRZ line width against the photo width. MRZ lines run almost the full width of the document, so this tracks distance directly.
+   - **Certificate and ID front:** use the bounding box of the recognised text lines against the photo size, and the page outline from `cropPage` when it's found.
+3. Keep `_coverage` only as a backup, for when no text was read.
+4. Set the limits from those real photos, and add them to `test/image_quality_test.dart`.
+
+**Expected behaviour after the fix**
+
+| Photo | Result |
+|---|---|
+| Document fills the box, any background | No framing problem |
+| Far document on a dark background | `documentNotInFrame` |
+| Far document on a light background | `documentNotInFrame` |
+| Far ID back with an MRZ that can still be read | `documentNotInFrame`, with values still returned |
+| Plain background and no text read | Not reported as far, but reading finds nothing |
+
+**What to change in the app after the fix**
+
+- Upgrade to 0.1.4. No code change should be needed, because `documentNotInFrame` already opens the retake dialog.
+- Add far photos on light and dark backgrounds to [`docs/testing/DEVICE_SMOKE.md`](../testing/DEVICE_SMOKE.md), for A4 pages, ID backs and passports.
+
+---
+
+## I9. `processCivilRegistry` doesn't flatten the page
+
+- [ ] Fixed in idlens
+- [ ] Adopted in the app
+
+**What happens**
+
+idlens' own camera flattens a certificate to a straight A4 sheet with `ImageOps.cropPage` when it finds the page outline. That only happens in `presentation/widgets/card_camera_page.dart`. `processCivilRegistry`, which the app uses, reads the photo as it is.
+
+**Why it matters**
+
+The two flows read different images, so accuracy from idlens' own screens doesn't tell us about the app. A tilted or far page in the app gets no correction.
+
+**Recommended fix**
+
+Run the same flattening inside `processCivilRegistry`, and fall back to the plain photo when no outline is found. Clean up its temporary file afterwards.
+
+**Expected behaviour after the fix**
+
+- A tilted page is straightened before reading in both flows.
+- A photo with no clear outline reads as it does today.
+- The file passed in by the app isn't changed.
+
+**What to change in the app after the fix**
+
+- Upgrade to 0.1.4.
+- Compare certificate accuracy before and after with the same real photos.
+- Decide whether the image uploaded to the backend should be the flattened one. It isn't today, and this fix alone won't change that.
+
+---
+
+## I10. Apps have to build their own camera
+
+- [ ] Added to idlens
+- [ ] Arabic reviewed by a native speaker
+- [ ] Adopted in the app
+
+**Decision:** agreed on 2026-11-02. idlens owns the camera through a new capture API, and the camera supports Arabic.
+
+**What happens**
+
+idlens has two ways in. `scan*` opens the full flow, whose screens are in English only. `process*` only reads files. An app that needs its own language or flow must therefore write its own camera and copy idlens' numbers.
+
+**Why it matters**
+
+The MTN app did this, and its camera has already drifted from idlens' ([B27](SIM_REGISTRATION_OCR_BUGS.md#b27-the-apps-camera-skips-steps-from-idlens-camera)). Framing, crop, focus and flattening all affect how well idlens reads, so they should live with the reader.
+
+**Recommended fix**
+
+Add a capture method that opens the camera for one page and returns the finished photo. Don't add camera options to `process*`, because those methods never open a camera.
+
+```dart
+/// Returns the cropped photo, or null if the user left the camera.
+/// Throws ScanException when the camera can't be used.
+Future<File?> captureDocument(
+  BuildContext context, {
+  required DocumentKind kind,
+  required DocumentSide side,
+  CaptureOptions options = const CaptureOptions(),
+});
+```
+
+Build it from the existing `card_camera_page.dart`, then make these changes:
+
+- Replace its hardcoded English text with built-in English and Arabic, picked with `Localizations.localeOf(context)`, so that idlens doesn't need `easy_localization`.
+- Let an app replace any text through `CaptureOptions(labels: ...)`, which also covers other languages. An app passes only the texts it wants to change.
+- Support right-to-left layouts for the controls and instructions. The box and MRZ guide don't flip, because the document doesn't, and "MRZ" stays untranslated.
+- Take the text style from the app's theme, so that each app keeps its own fonts.
+- Shrink the box on short screens, as the app's `documentFrameRect` does. `CardFrame.centered` doesn't do this today.
+
+Keep the options few, so that every app sends idlens the photo it's tuned for:
+
+| Option | Fixed in idlens |
+|---|---|
+| Text and translations | Box size and shape |
+| Colours and style | MRZ guide and crop margin |
+| Whether flash is offered | Resolution, focus and orientation |
+
+Keep `process*` as it is, so an app that doesn't want this camera can still pass its own files. Move the guide, crop and frame tests from the app (`test/features/sim/document_frame_test.dart`) to idlens with the code they cover.
+
+**Expected behaviour after the fix**
+
+- The photo is cropped to the box, with the same steps in `scan*` and `captureDocument`.
+- A certificate is flattened as it is in `scan*` today, so the app uploads the flattened page too. Check that the backend accepts this.
+- The uncropped photo is deleted after cropping, as idlens already does. The returned photo belongs to the app, which deletes it.
+- The camera shuts down when the method returns, so nothing keeps running during the app's review.
+- The app returning from the background restores the preview.
+- If permission is denied or the camera fails, the method throws `ScanException` instead of leaving the user on an error screen.
+- The whole camera image is shown with black bars where needed, so the box lines up with the real photo.
+- An app in Arabic gets an Arabic, right-to-left camera with no setup, and any other language falls back to English.
+- Text passed in `labels` always replaces the built-in text.
+- `ScanException` stays as codes, so each app writes its own error message.
+- The camera works in Arabic on a short screen, with the flash and close buttons on the correct sides.
+
+**Known costs**
+
+- The camera reopens between the ID's front and back, which adds a short delay.
+- The thumbnail of the front on the back step goes away, unless it's added as an option later.
+- Each camera change needs an idlens release. A local path dependency keeps this easy during development.
+
+**What to change in the app after the fix**
+
+- Replace the camera in [`document_scanner_camera_page.dart`](../../lib/features/sim/presentation/widgets/document_scanner_camera_page.dart) with `captureDocument`, and delete what's left of that file.
+- Keep `DocumentCaptureSession`, [`document_photo_review.dart`](../../lib/features/sim/presentation/widgets/document_photo_review.dart), the problem dialogs and the translations.
+- Pass the app's own camera text from `en.json` and `ar.json` through `labels`, so that all its copy stays in one place (`ai/rules.md` §9).
+- Show a translated message and one call to action for settings when `ScanException` is thrown.
+- Remove the app's `DocumentType` enum, and use `DocumentKind` and `DocumentSide` in place of its overlapping types (helps P6).
+- Delete crops in the app when they leave the form or the flow ends.
+- Update `docs/GOTCHAS.md`: remove the note about copying idlens' numbers, and note that the app uses `captureDocument` and `process*`, not `scan*`.
+- Update rows 4a–4d in [`docs/testing/DEVICE_SMOKE.md`](../testing/DEVICE_SMOKE.md).
+- Run the 20–30 document accuracy test after this, because the camera affects the results.
+- Close [B21](SIM_REGISTRATION_OCR_BUGS.md#b21-the-crop-may-not-match-the-frame-the-dealer-sees), [B22](SIM_REGISTRATION_OCR_BUGS.md#b22-photos-arent-size-limited), [B23](SIM_REGISTRATION_OCR_BUGS.md#b23-the-camera-isnt-managed-properly) and [B27](SIM_REGISTRATION_OCR_BUGS.md#b27-the-apps-camera-skips-steps-from-idlens-camera) after checking them on a phone.
+
+---
+
+## I11. `scan*` has its own path and no clear role
+
+- [ ] `scan*` uses `captureDocument`
+- [ ] `options` removed from `process*`
+- [ ] README updated
+- [ ] Decided whether to keep `scan*` long term
+
+**Decision:** agreed on 2026-11-02. Keep `scan*` as the English quick start, rebuild it on the new camera, and don't add features to it.
+
+**What happens**
+
+- `scan*` opens its own flow of tips, camera and review, with hardcoded English text. The MTN app can't use it.
+- Its flow does work that `process*` skips, such as flattening a certificate (I9), so the two paths read different photos.
+- `showTips` and `requireValidMrz` are accepted by `process*`, but documented as ignored there.
+
+**Why it matters**
+
+Two paths can give different accuracy for the same document, and options that do nothing mislead whoever calls them. Without a clear role, every new feature also has to be considered for `scan*`.
+
+**Recommended fix**
+
+1. **In 0.1.4:** make `scan*` call `captureDocument` for each photo, then the same code as `process*`. Have `scan*` force English on the camera until its whole flow is translated, so an Arabic phone doesn't show an Arabic camera inside English tips and dialogs.
+2. **In 0.2.0:** remove the `options` parameter from `process*`, so these options only appear on `scan*`.
+3. **In the README:** describe each level:
+
+| API | Who it's for |
+|---|---|
+| `scan*` | Apps that want everything ready-made, in English |
+| `captureDocument` + `process*` | Apps with their own flow or language, like MTN |
+| `process*` alone | Apps that already have the photos |
+
+**Long-term decision**
+
+It isn't known yet whether any other app uses idlens. If MTN turns out to be the only real user, remove `scan*` and move the flow into the `example` app as sample code. If idlens will be promoted to other apps, keep it.
+
+**Expected behaviour after the fix**
+
+- The same document gives the same photo processing through `scan*` and through `captureDocument` + `process*`.
+- `scan*` is fully in English on every phone until its flow is translated.
+- `process*` has no options that do nothing.
+- Results from `scan*` work as a fair reference when testing the app, for example to confirm that I8 isn't caused by the app.
+
+**What to change in the app after the fix**
+
+- Nothing for the `scan*` changes, because the app doesn't call it.
+- Check that the app doesn't pass `options` to `process*` when it upgrades to 0.2.0. Today's [`document_reader_service.dart`](../../lib/core/services/document_reader/document_reader_service.dart) doesn't.
+- Keep the `docs/GOTCHAS.md` note that the app uses `captureDocument` and `process*`, not `scan*`.
+
+---
+
+## Also listed in `docs/OCR.md`
+
+`docs/OCR.md` says a release should "fix or remove the old passport date code that has a failing test". I didn't check this, so check idlens' test suite before 0.1.4 goes out.

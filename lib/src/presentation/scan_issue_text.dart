@@ -1,41 +1,84 @@
+import 'package:idlens/src/api/scan_outcome.dart';
+import 'package:idlens/src/domain/document_kind.dart';
 import 'package:idlens/src/domain/scan_issue.dart';
 
-/// What this app tells the user for each [ScanIssue]. The domain layer only
-/// produces codes, so another host app can word them differently.
-extension ScanIssueText on ScanIssue {
-  String get title => switch (this) {
-    ScanIssue.mrzNotFound => 'MRZ not found',
-    ScanIssue.wrongDocument => 'Wrong document',
-    ScanIssue.documentNotInFrame => 'Document not in frame',
-    ScanIssue.imageNotClear => 'Image not clear',
-    ScanIssue.mrzCheckDigitsFailed => 'MRZ could not be verified',
-    ScanIssue.processingFailed => 'Scan failed',
-  };
+/// What the built-in flow tells the user. The result only carries codes, so
+/// another host app can word them differently.
+class ScanNotice {
+  const ScanNotice(this.title, this.message, {this.readAgain = false});
 
-  String get message => switch (this) {
-    ScanIssue.mrzNotFound =>
-      'No MRZ found. Make sure the machine-readable lines at the bottom of '
-          'the document are inside the frame, then retake.',
-    ScanIssue.wrongDocument =>
+  final String title;
+  final String message;
+
+  /// The photos are fine, so the user is offered to read them again instead
+  /// of retaking them.
+  final bool readAgain;
+
+  factory ScanNotice.forIssue(ScanIssue issue) => switch (issue) {
+    ScanIssue.wrongDocument => const ScanNotice(
+      'Wrong document',
       'This is not the document you chose to scan. '
           'Scan the correct document and retake.',
-    ScanIssue.documentNotInFrame =>
+    ),
+    ScanIssue.documentNotInFrame => const ScanNotice(
+      'Document not in frame',
       'The whole document must be inside the box: not too far, not too close '
           'and not cut off at the edges. Fit it inside the box and retake.',
-    ScanIssue.imageNotClear =>
-      'The image is not clear. Use good light, avoid glare, hold steady and retake.',
-    ScanIssue.mrzCheckDigitsFailed =>
-      'The machine-readable lines were read, but their check digits do not '
-          'match, so some values may be wrong. Retake with the MRZ sharp and '
-          'fully inside the frame.',
-    ScanIssue.processingFailed =>
+    ),
+    ScanIssue.imageNotClear => const ScanNotice(
+      'Image not clear',
+      'The image is not clear. Use good light, avoid glare, hold steady and '
+          'retake.',
+    ),
+    ScanIssue.processingFailed => const ScanNotice(
+      'Scan failed',
       'The document could not be processed. Retake the photos and try again.',
+    ),
+    ScanIssue.readerUnavailable => const ScanNotice(
+      "The scanner couldn't start",
+      'Your photos are fine. Try again in a moment. If it keeps happening, '
+          'free up some storage or restart the app.',
+      readAgain: true,
+    ),
   };
 
-  /// Problems with the machine-readable zone itself. With `requireValidMrz`
-  /// the built-in flow lets the user only retake after one of these.
-  bool get isMrzProblem =>
-      this == ScanIssue.mrzNotFound ||
-      this == ScanIssue.wrongDocument ||
-      this == ScanIssue.mrzCheckDigitsFailed;
+  static const _mrzNotFound = ScanNotice(
+    'MRZ not found',
+    'No MRZ found. Make sure the machine-readable lines at the bottom of the '
+        'document are inside the frame, then retake.',
+  );
+
+  static const _mrzNotVerified = ScanNotice(
+    'MRZ could not be verified',
+    'The machine-readable lines were read, but their check digits do not '
+        'match, so some values may be wrong. Retake with the MRZ sharp and '
+        'fully inside the frame.',
+  );
+
+  /// The notice for a finished scan, or null when there is nothing to say.
+  /// [alreadyShown] is the photo issue the user already saw before reading.
+  static ScanNotice? after(ScanOutcome outcome, {ScanIssue? alreadyShown}) {
+    final issue = outcome.issue;
+    final hasMrz = outcome.documentKind.hasMrz;
+    if (hasMrz &&
+        outcome.mrz == null &&
+        (issue == null || issue == ScanIssue.imageNotClear)) {
+      return _mrzNotFound;
+    }
+    if (issue != null && issue != alreadyShown) {
+      return ScanNotice.forIssue(issue);
+    }
+    if (hasMrz && outcome.mrz != null && !outcome.mrz!.isValid) {
+      return _mrzNotVerified;
+    }
+    return null;
+  }
+
+  /// Whether the MRZ is missing, wrong or failed a check digit. With
+  /// `requireValidMrz` the built-in flow then lets the user only retake.
+  static bool hasMrzProblem(ScanOutcome outcome) =>
+      outcome.documentKind.hasMrz &&
+      (outcome.issue == ScanIssue.wrongDocument ||
+          outcome.mrz == null ||
+          !outcome.mrz!.isValid);
 }

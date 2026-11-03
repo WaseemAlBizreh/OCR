@@ -10,11 +10,31 @@ import 'package:idlens/src/data/ocr/paddle/db_postprocess.dart';
 import 'package:idlens/src/data/ocr/paddle/rtl_reorder.dart';
 import 'package:opencv_dart/opencv.dart' as cv;
 
+/// The detector, the recognizer and its decoder, loaded together.
+typedef PaddleModels = ({OrtSession det, OrtSession rec, CtcDecoder decoder});
+
+/// The text reader's models could not be loaded, for example because the
+/// phone had no storage left to unpack them. Apps see it as
+/// `ScanIssue.readerUnavailable`; the next read tries to load again.
+class ReaderUnavailableException implements Exception {
+  const ReaderUnavailableException(this.cause);
+
+  /// The error that stopped the load.
+  final Object cause;
+
+  @override
+  String toString() => 'ReaderUnavailableException: $cause';
+}
+
 /// On-device Arabic + Latin card text with PaddleOCR PP-OCRv5 (ONNX Runtime):
 /// DB detector finds the text lines, the Arabic CTC recognizer reads each one.
 ///
 /// Models and their provenance: `assets/models/paddle/README.md`.
 class PaddleOcrEngine implements CardTextRecognizer {
+  /// [load] replaces the model loading, for tests.
+  PaddleOcrEngine({Future<PaddleModels> Function()? load})
+    : _load = load ?? _loadModels;
+
   static const _detAsset =
       'packages/idlens/assets/models/paddle/idlens_det_v1.onnx';
   static const _recAsset =
@@ -29,20 +49,48 @@ class PaddleOcrEngine implements CardTextRecognizer {
 
   static const _post = DbPostProcess();
 
-  OrtSession? _det;
-  OrtSession? _rec;
-  CtcDecoder? _decoder;
+  final Future<PaddleModels> Function() _load;
+  Future<PaddleModels>? _loading;
 
-  Future<void> _ensureLoaded() async {
-    if (_det != null) return;
+  /// The models, loaded once and shared by every read, including reads that
+  /// start together. A failed load is forgotten, so the next read tries again
+  /// instead of every read failing until the app restarts.
+  Future<PaddleModels> _models() async {
+    Future<PaddleModels>? loading;
+    try {
+      loading = _loading ??= _load();
+      return await loading;
+    } catch (error) {
+      // A read that started later may already be loading again.
+      if (identical(_loading, loading)) _loading = null;
+      throw ReaderUnavailableException(error);
+    }
+  }
+
+  /// Loads all three parts, or none: anything loaded before a failure is
+  /// closed again.
+  static Future<PaddleModels> _loadModels() async {
     final ort = OnnxRuntime();
-    _det = await ort.createSessionFromAsset(_detAsset);
-    _rec = await ort.createSessionFromAsset(_recAsset);
-    final dict = (await rootBundle.loadString(
-      _dictAsset,
-    )).split('\n').where((line) => line.isNotEmpty).toList();
-    // The recognizer's last class is the space character.
-    _decoder = CtcDecoder([...dict, ' ']);
+    OrtSession? det;
+    OrtSession? rec;
+    try {
+      det = await ort.createSessionFromAsset(_detAsset);
+      rec = await ort.createSessionFromAsset(_recAsset);
+      final dict = (await rootBundle.loadString(
+        _dictAsset,
+      )).split('\n').where((line) => line.isNotEmpty).toList();
+      // The recognizer's last class is the space character.
+      return (det: det, rec: rec, decoder: CtcDecoder([...dict, ' ']));
+    } catch (_) {
+      for (final session in [det, rec]) {
+        try {
+          await session?.close();
+        } catch (_) {
+          // The load error is the one worth reporting.
+        }
+      }
+      rethrow;
+    }
   }
 
   @override
@@ -53,11 +101,13 @@ class PaddleOcrEngine implements CardTextRecognizer {
   ///
   /// [detMaxSide] is the longest side the detector sees; a full A4 page needs
   /// more than a card to keep small print readable.
+  ///
+  /// Throws [ReaderUnavailableException] when the models can't be loaded.
   Future<PaddleResult> recognize(
     String imagePath, {
     int detMaxSide = _detMaxSide,
   }) async {
-    await _ensureLoaded();
+    final models = await _models();
 
     final image = cv.imread(imagePath);
     if (image.isEmpty) {
@@ -66,10 +116,10 @@ class PaddleOcrEngine implements CardTextRecognizer {
     }
 
     try {
-      final boxes = await _detect(image, detMaxSide);
+      final boxes = await _detect(models.det, image, detMaxSide);
       final lines = <PaddleLine>[];
       for (final box in boxes) {
-        final line = await _recognize(image, box);
+        final line = await _recognize(models, image, box);
         if (line != null) lines.add(line);
       }
       return PaddleResult(_inReadingOrder(lines));
@@ -80,7 +130,11 @@ class PaddleOcrEngine implements CardTextRecognizer {
 
   // ---- detection ----------------------------------------------------------
 
-  Future<List<TextBox>> _detect(cv.Mat image, int detMaxSide) async {
+  Future<List<TextBox>> _detect(
+    OrtSession det,
+    cv.Mat image,
+    int detMaxSide,
+  ) async {
     final scale = math.min(1.0, detMaxSide / math.max(image.cols, image.rows));
     final w = math.max(32, (image.cols * scale / 32).round() * 32);
     final h = math.max(32, (image.rows * scale / 32).round() * 32);
@@ -102,7 +156,7 @@ class PaddleOcrEngine implements CardTextRecognizer {
     }
 
     final tensor = await OrtValue.fromList(input, [1, 3, h, w]);
-    final outputs = await _det!.run({_det!.inputNames.first: tensor});
+    final outputs = await det.run({det.inputNames.first: tensor});
     final out = outputs.values.first;
     final probs = Float32List.fromList([
       for (final v in await out.asFlattenedList()) (v as num).toDouble(),
@@ -125,7 +179,11 @@ class PaddleOcrEngine implements CardTextRecognizer {
 
   static final _digits = RegExp(r'[0-9\u0660-\u0669\u06F0-\u06F9]');
 
-  Future<PaddleLine?> _recognize(cv.Mat image, TextBox box) async {
+  Future<PaddleLine?> _recognize(
+    PaddleModels models,
+    cv.Mat image,
+    TextBox box,
+  ) async {
     final x = box.left.floor().clamp(0, image.cols - 1);
     final y = box.top.floor().clamp(0, image.rows - 1);
     final w = (box.right.ceil() - x).clamp(1, image.cols - x);
@@ -134,7 +192,7 @@ class PaddleOcrEngine implements CardTextRecognizer {
 
     final region = image.region(cv.Rect(x, y, w, h));
     try {
-      final first = await _readLine(region);
+      final first = await _readLine(models, region);
 
       // The card's guilloche background makes the recognizer drop digits (a
       // phone number lost 3 of 10 in testing). Contrast normalisation (CLAHE)
@@ -144,7 +202,7 @@ class PaddleOcrEngine implements CardTextRecognizer {
       if (first != null && _digits.hasMatch(first.text)) {
         final enhanced = _clahe(region);
         try {
-          final second = await _readLine(enhanced);
+          final second = await _readLine(models, enhanced);
           if (second != null &&
               _digitCount(second.text) > _digitCount(first.text)) {
             best = second;
@@ -180,7 +238,10 @@ class PaddleOcrEngine implements CardTextRecognizer {
   }
 
   /// Runs the recognizer on one line image; `null` for low-confidence reads.
-  Future<({String text, double confidence})?> _readLine(cv.Mat line) async {
+  Future<({String text, double confidence})?> _readLine(
+    PaddleModels models,
+    cv.Mat line,
+  ) async {
     final targetW = (_recHeight * line.cols / line.rows)
         .round()
         .clamp(16, _recMaxWidth)
@@ -204,7 +265,7 @@ class PaddleOcrEngine implements CardTextRecognizer {
     }
 
     final tensor = await OrtValue.fromList(input, [1, 3, _recHeight, targetW]);
-    final outputs = await _rec!.run({_rec!.inputNames.first: tensor});
+    final outputs = await models.rec.run({models.rec.inputNames.first: tensor});
     final out = outputs.values.first;
     final flat = await out.asFlattenedList();
     final shape = out.shape; // [1, T, classes]
@@ -222,7 +283,7 @@ class PaddleOcrEngine implements CardTextRecognizer {
             (flat[t * classes + k] as num).toDouble(),
         ],
     ];
-    final decoded = _decoder!.greedy(logits);
+    final decoded = models.decoder.greedy(logits);
     if (decoded.confidence < _minConfidence) return null;
 
     final text = ParserUtils.normalizeArabic(
@@ -264,14 +325,6 @@ class PaddleOcrEngine implements CardTextRecognizer {
       }
     }
     return ordered;
-  }
-
-  Future<void> dispose() async {
-    await _det?.close();
-    await _rec?.close();
-    _det = null;
-    _rec = null;
-    _decoder = null;
   }
 }
 
