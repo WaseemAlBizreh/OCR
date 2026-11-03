@@ -11,7 +11,7 @@ These bugs are in the `idlens` package ([`WaseemAlBizreh/OCR`](https://github.co
 | [I3](#i3-image-work-runs-on-the-ui-isolate) | Image work runs on the UI isolate | **Fixed, not released** | Next release |
 | [I4](#i4-some-certificate-values-have-no-confidence-score) | Some certificate values have no confidence score | **Fixed by removing the score, not released** | Next release (breaking API change) |
 | [I5](#i5-a-cut-off-document-is-accepted) | A cut-off document is accepted | **Fixed, not released** (limits to check on real photos) | Next release |
-| [I6](#i6-issues-dont-say-which-side-of-the-id-caused-them) | Issues don't say which side of the ID caused them | Low | 0.2.0 |
+| [I6](#i6-issues-dont-say-which-side-of-the-id-caused-them) | Issues don't say which side of the ID caused them | **Fixed, not released** | Next release (adds `issueSides`) |
 | [I7](#i7-a-running-read-cant-be-cancelled) | A running read can't be cancelled | Low | Later |
 | [I8](#i8-a-document-far-from-the-camera-can-be-accepted) | A document far from the camera can be accepted | High | 0.1.4 |
 | [I9](#i9-processcivilregistry-doesnt-flatten-the-page) | `processCivilRegistry` doesn't flatten the page | Low once I10 ships | 0.1.4 |
@@ -554,7 +554,7 @@ When idlens finds a cut-off or far document, should the scan return:
 
 ## I6. Issues don't say which side of the ID caused them
 
-- [x] Fixed in idlens (2026-11-03, not committed or released)
+- [x] Fixed in idlens (2026-11-03, committed in d03adbc, not released)
 - [ ] Adopted in the app
 
 **Summary of the fix**
@@ -591,6 +591,13 @@ the example app, the README, `doc/how_it_works.md` and `CHANGELOG.md`.
 **How it was checked:** `flutter analyze` reports no issues for the package or
 the example. `scan_review_test.dart` (7 new tests) and `scan_outcome_test.dart`
 pass, 33 tests, run in a scratch Dart package. Nothing was tried on a device.
+
+**Still needed in the MTN app**
+
+- Pass `result.issueSides` through `ScannedDocumentData`.
+- Make `_retake` in `sim_scan_form.dart` open the camera only for the sides in
+  `issueSides`. When it's empty, nothing is wrong with the photos.
+- Close B26 in `SIM_REGISTRATION_OCR_BUGS.md`.
 
 **What happens**
 
