@@ -64,12 +64,45 @@ class CardFrame {
     );
   }
 
+  /// True when the [captureMargin] strip doesn't fit inside the preview, so
+  /// the crop around this frame is cut short at the preview's edge. It means
+  /// the frame is bigger than the one `DocumentGuide` gives.
+  bool get marginClipped {
+    final dx = (right - left) * captureMargin;
+    final dy = (bottom - top) * captureMargin;
+    return left - dx < 0 || top - dy < 0 || right + dx > 1 || bottom + dy > 1;
+  }
+
   Rect toRect(Size size) => Rect.fromLTRB(
     left * size.width,
     top * size.height,
     right * size.width,
     bottom * size.height,
   );
+
+  /// How far the MRZ guide sits inside the frame's sides and bottom, in
+  /// logical pixels.
+  static const mrzGuideInset = 8.0;
+
+  /// The MRZ guide along the bottom of [frame] (in pixels), [fraction] of its
+  /// height.
+  static Rect mrzGuideRect(Rect frame, double fraction) => Rect.fromLTRB(
+    frame.left + mrzGuideInset,
+    frame.bottom - frame.height * fraction,
+    frame.right - mrzGuideInset,
+    frame.bottom - mrzGuideInset,
+  );
+
+  @override
+  bool operator ==(Object other) =>
+      other is CardFrame &&
+      other.left == left &&
+      other.top == top &&
+      other.right == right &&
+      other.bottom == bottom;
+
+  @override
+  int get hashCode => Object.hash(left, top, right, bottom);
 }
 
 class CardFrameOverlay extends StatelessWidget {
@@ -141,12 +174,7 @@ class _CardFramePainter extends CustomPainter {
 
     final band = mrzBandFraction;
     if (band != null) {
-      final bandRect = Rect.fromLTRB(
-        rect.left + 8,
-        rect.bottom - rect.height * band,
-        rect.right - 8,
-        rect.bottom - 8,
-      );
+      final bandRect = CardFrame.mrzGuideRect(rect, band);
       canvas.drawRRect(
         RRect.fromRectAndRadius(bandRect, const Radius.circular(6)),
         Paint()

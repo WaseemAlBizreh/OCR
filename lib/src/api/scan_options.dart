@@ -1,4 +1,5 @@
-/// Options shared by every scan.
+/// Options shared by every `scan...` method. The `process...` methods take no
+/// options object: they never open a screen, and take their own `timeout`.
 class ScanOptions {
   /// Creates options. The defaults suit most apps.
   const ScanOptions({
@@ -8,13 +9,13 @@ class ScanOptions {
   });
 
   /// Whether the built-in flow starts with its page of photo tips. When false
-  /// the camera opens straight away. Ignored by the `process*` methods.
+  /// the camera opens straight away.
   final bool showTips;
 
   /// Whether the built-in flow refuses to continue until the machine-readable
   /// zone (MRZ) is found and its check digits pass: the user can only retake.
   /// Off by default, so users may continue anyway and the app decides what to
-  /// do with the `issue`. Ignored by the `process*` methods, which never
+  /// do with the `issue`. The `process...` methods never
   /// block.
   final bool requireValidMrz;
 
@@ -25,7 +26,7 @@ class ScanOptions {
   final Duration? timeout;
 }
 
-/// Options for `IdLens.scanIdCard` and `IdLens.processIdCard`.
+/// Options for `IdLens.scanIdCard`.
 class IdCardScanOptions extends ScanOptions {
   /// Creates options for an ID card scan.
   const IdCardScanOptions({
@@ -35,7 +36,7 @@ class IdCardScanOptions extends ScanOptions {
   });
 }
 
-/// Options for `IdLens.scanPassport` and `IdLens.processPassport`.
+/// Options for `IdLens.scanPassport`.
 class PassportScanOptions extends ScanOptions {
   /// Creates options for a passport scan.
   const PassportScanOptions({
@@ -45,7 +46,7 @@ class PassportScanOptions extends ScanOptions {
   });
 }
 
-/// Options for `IdLens.scanCivilRegistry` and `IdLens.processCivilRegistry`.
+/// Options for `IdLens.scanCivilRegistry`.
 /// A certificate has no MRZ, so `requireValidMrz` has no effect.
 class CivilRegistryScanOptions extends ScanOptions {
   /// Creates options for a civil registry certificate scan.

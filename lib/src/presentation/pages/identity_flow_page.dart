@@ -51,6 +51,10 @@ class _IdentityFlowPageState extends State<IdentityFlowPage> {
   bool get _permissionDenied =>
       _cameraFailure?.reason == ScanFailureReason.permissionDenied;
 
+  /// Every photo of this flow was made by idlens' own camera, so the result
+  /// owns them all and its `dispose()` deletes them.
+  Set<DocumentSide> get _ownedSides => widget.kind.sides.toSet();
+
   bool get _complete =>
       widget.kind.sides.every((side) => _originals.containsKey(side));
 
@@ -85,7 +89,13 @@ class _IdentityFlowPageState extends State<IdentityFlowPage> {
       exit = ScanFlowExit(failure: _cameraFailure);
     } else {
       _handedOff = true;
-      exit = ScanFlowExit(outcome: _runner.incomplete(widget.kind, _originals));
+      exit = ScanFlowExit(
+        outcome: _runner.incomplete(
+          widget.kind,
+          _originals,
+          temporary: _ownedSides,
+        ),
+      );
     }
     Navigator.of(context).pop(exit);
   }
@@ -178,19 +188,23 @@ class _IdentityFlowPageState extends State<IdentityFlowPage> {
       final outcome = switch (widget.kind) {
         DocumentKind.sudanId => await _runner.idCard(
           _originals,
-          temporary: true,
+          temporary: _ownedSides,
           frontCheck: check,
           timeout: widget.options.timeout,
         ),
         DocumentKind.passport => await _runner.passport(
           _originals[DocumentSide.dataPage]!,
-          temporary: true,
+          temporary: _ownedSides,
           timeout: widget.options.timeout,
         ),
         DocumentKind.civilRegistryCertificate => await _runner.civilRegistry(
           _originals[DocumentSide.page]!,
-          temporary: true,
+          temporary: _ownedSides,
           pageCheck: check,
+          // The camera keeps the margin around the page for the framing
+          // checks, so it doesn't flatten it; a flat copy is read instead, as
+          // `processCivilRegistry` does.
+          flatten: true,
           timeout: widget.options.timeout,
         ),
       };

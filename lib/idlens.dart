@@ -5,6 +5,8 @@
 library;
 
 export 'src/api/civil_registry_result.dart';
+export 'src/api/document_guide.dart';
+export 'src/api/document_photo.dart';
 export 'src/api/id_card_result.dart';
 export 'src/api/passport_result.dart';
 export 'src/api/scan_exception.dart';

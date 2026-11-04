@@ -88,9 +88,12 @@ class _HomePageState extends State<HomePage> {
 
   Future<void> _readLastIdCardAgain() => _run(() {
     final last = _lastIdCard!;
+    // These files were already cropped by the scan, so they are read as they
+    // are: DocumentPhoto.file. A raw photo from your own camera would be a
+    // DocumentPhoto.camera with the box from DocumentGuide.forPreview.
     return _idLens.processIdCard(
-      front: last.imageFor(DocumentSide.front)!.file,
-      back: last.imageFor(DocumentSide.back)!.file,
+      front: DocumentPhoto.file(last.imageFor(DocumentSide.front)!.file),
+      back: DocumentPhoto.file(last.imageFor(DocumentSide.back)!.file),
     );
   });
 

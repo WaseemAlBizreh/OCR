@@ -15,13 +15,13 @@ These bugs are in the `idlens` package ([`WaseemAlBizreh/OCR`](https://github.co
 | [I7](#i7-a-running-read-cant-be-cancelled) | A running read can't be cancelled | **Fixed with a time limit, not released** | Next release (adds `timeout`) |
 | [I8](#i8-a-document-far-from-the-camera-can-be-accepted) | A document far from the camera can be accepted | **Fixed, not released** (limit to check on real photos) | Next release |
 | [I9](#i9-processcivilregistry-doesnt-flatten-the-page) | `processCivilRegistry` doesn't flatten the page | **Fixed, not released** | Next release |
-| [I10](#i10-apps-have-to-build-their-own-camera) | Apps have to build their own camera, with no Arabic support | High, comes before the accuracy test | 0.1.4 |
-| [I11](#i11-scan-has-its-own-path-and-no-clear-role) | `scan*` has its own path and no clear role | Medium | 0.1.4 and 0.2.0 |
+| [I10](#i10-apps-with-their-own-camera-get-photos-the-checks-were-not-tuned-for) | Apps with their own camera get photos the checks weren't tuned for | **Fixed, not released** (phone check needed) | Next release (breaking: `process*` take `DocumentPhoto`) |
+| [I11](#i11-scan-has-its-own-path-and-no-clear-role) | `scan*` has its own path and no clear role | **Fixed, not released** (long-term decision open) | Next release |
 
 ## Recommended order
 
-1. **Release 0.1.4 with I2, I4, I8, I9, I10 and the shared camera from I11.** None of them breaks the API, so the app can upgrade with `flutter pub upgrade`. I10 only adds to it. Include I3 if phone testing shows a freeze.
-2. **Release 0.2.0 with I1, I5, I6 and the option cleanup from I11.** These change results, their types or method signatures, so they fit in one breaking release. The app's `^0.1.3` constraint won't pick up 0.2.0, so its `pubspec.yaml` must change too.
+1. **One release, 0.2.0, with everything above.** I1, I5, I6, I10 and I11 change results, their types or method signatures (`process*` now take a `DocumentPhoto` and no `options`), so it is a breaking release. The app's `^0.1.3` constraint won't pick up 0.2.0, so its `pubspec.yaml` must change too. Include I3 if phone testing shows a freeze.
+2. **Check I5, I8 and I10 together on a phone** before releasing: they all depend on the photo having a thin strip of background around the document.
 3. **Decide on I7 later,** once read times are measured. The app can skip stale queued reads without it.
 
 ---
@@ -895,98 +895,91 @@ Run the same flattening inside `processCivilRegistry`, and fall back to the plai
 
 ---
 
-## I10. Apps have to build their own camera
+## I10. Apps with their own camera get photos the checks were not tuned for
 
-- [ ] Added to idlens
-- [ ] Arabic reviewed by a native speaker
+- [x] Fixed in idlens (2026-11-04, not committed or released)
+- [ ] Checked on a phone
 - [ ] Adopted in the app
-
-**Decision:** agreed on 2026-11-02. idlens owns the camera through a new capture API, and the camera supports Arabic.
 
 **What happens**
 
-idlens has two ways in. `scan*` opens the full flow, whose screens are in English only. `process*` only reads files. An app that needs its own language or flow must therefore write its own camera and copy idlens' numbers.
+idlens' cut-off (I5) and "too far" (I8) checks were tuned on photos cut the way idlens' own camera cuts them: the box about 86% of the preview, plus a 6% strip of background on every side. An app with its own camera cuts differently. MTN uses a 92% box and crops the ID front and the certificate exactly to it, with no strip. `process*` took any `File`, so it judged those photos as if idlens had cut them, silently: a well-placed card could look cut off, and "too far" was measured against the wrong size. The same document gave different results through `scan*` and through `process*`.
 
-**Why it matters**
+**Decision (2026-11-04)**
 
-The MTN app did this, and its camera has already drifted from idlens' ([B27](SIM_REGISTRATION_OCR_BUGS.md#b27-the-apps-camera-skips-steps-from-idlens-camera)). Framing, crop, focus and flattening all affect how well idlens reads, so they should live with the reader.
+- MTN keeps its own camera design. idlens never opens a camera for it.
+- No separate crop step that an app can forget. The crop happens inside `process*`.
+- `process*` take a `DocumentPhoto`, never a bare `File`:
+  - `DocumentPhoto.camera(file, box:, previewSize:)`: the raw photo from the app's own camera. idlens crops it around `box` with the 6% strip, then reads it.
+  - `DocumentPhoto.file(file)`: a finished photo (a server, the gallery, or a `scan*` result read again). Read as it is.
+- `DocumentGuide.forPreview(kind:, side:, previewSize:, maxHeight:)` gives the box and the MRZ guide to draw, with idlens' own numbers.
+- The I5/I8 limits are **not** loosened (0.42, 1.5%, one edge).
 
-**Recommended fix**
+**Tried and reverted first (2026-11-03):** a public `captureDocument` with an English/Arabic camera screen, `CaptureOptions`/`CaptureLabels`, and a `DocumentGuide` + `cropDocument` pair. It was reverted: MTN keeps its own camera, and a separate crop step could be skipped. It is saved in `git stash` ("I10 captureDocument + DocumentGuide/cropDocument (reverted 2026-11-03)"). The same day the "too far" and cut-off limits were loosened to compensate, and a test from far away then passed with no warning, so they were restored. Don't loosen them to fix an app's photos.
 
-Add a capture method that opens the camera for one page and returns the finished photo. Don't add camera options to `process*`, because those methods never open a camera.
+**Summary of the fix**
 
-```dart
-/// Returns the cropped photo, or null if the user left the camera.
-/// Throws ScanException when the camera can't be used.
-Future<File?> captureDocument(
-  BuildContext context, {
-  required DocumentKind kind,
-  required DocumentSide side,
-  CaptureOptions options = const CaptureOptions(),
-});
-```
-
-Build it from the existing `card_camera_page.dart`, then make these changes:
-
-- Replace its hardcoded English text with built-in English and Arabic, picked with `Localizations.localeOf(context)`, so that idlens doesn't need `easy_localization`.
-- Let an app replace any text through `CaptureOptions(labels: ...)`, which also covers other languages. An app passes only the texts it wants to change.
-- Support right-to-left layouts for the controls and instructions. The box and MRZ guide don't flip, because the document doesn't, and "MRZ" stays untranslated.
-- Take the text style from the app's theme, so that each app keeps its own fonts.
-- Shrink the box on short screens, as the app's `documentFrameRect` does. `CardFrame.centered` doesn't do this today.
-
-Keep the options few, so that every app sends idlens the photo it's tuned for:
-
-| Option | Fixed in idlens |
+| Where | Change |
 |---|---|
-| Text and translations | Box size and shape |
-| Colours and style | MRZ guide and crop margin |
-| Whether flash is offered | Resolution, focus and orientation |
+| `api/document_photo.dart` (new) | `DocumentPhoto.camera` (checks the box lies inside the preview) and `DocumentPhoto.file` |
+| `api/document_guide.dart` (restored) | `DocumentGuide.forPreview`: box = `CardFrame.centered`, MRZ guide only for an ID back or a passport |
+| `presentation/capture_crop.dart` (restored) | `cropAroundFrame`: the one function that cuts a photo, used by the built-in camera and by `process*` |
+| `data/image/image_ops.dart`, `domain/view_crop.dart` | `crop(viewAspect:)` maps the box onto a photo whose shape differs from the preview |
+| `scan_runner.dart` | `idCardFromPhotos`, `passportFromPhoto`, `civilRegistryFromPhoto`: crop camera photos inside the read, under the `timeout`; `PreparedPhotos` holds what is read and which files idlens made, so a timeout or a failed crop still lists the right files and a crop finished after a timeout is deleted; `temporary` is now a per-side set |
+| `idlens_scanner.dart` | `process*` take `DocumentPhoto`; the ignored `options` parameter is removed |
+| `card_camera_page.dart`, `identity_flow_page.dart` | The built-in camera uses `cropAroundFrame` and no longer flattens a certificate; the flow reads a flat copy (`flatten: true`), as `processCivilRegistry` does |
 
-Keep `process*` as it is, so an app that doesn't want this camera can still pass its own files. Move the guide, crop and frame tests from the app (`test/features/sim/document_frame_test.dart`) to idlens with the code they cover.
+- For a camera photo, the result's `images` are the cropped photos: temporary files that `dispose()` deletes, so the app uploads them first. A `DocumentPhoto.file` stays the app's own file.
+- A photo that can't be cropped (the file exists but isn't an image) gives `failed` with `processingFailed` and the images made so far.
+- `diagnostics['photoCrop']` says, per side, that the photo was cropped and whether the 6% strip had to be cut at the preview's edge (`marginClipped`, true when the app's box is bigger than the guide's).
+- A certificate is flattened only as a copy for reading, in every path, so the framing checks always see the page with its margin.
 
-**Expected behaviour after the fix**
+**Files changed:** new `api/document_photo.dart`, `api/document_guide.dart`, `domain/view_crop.dart`, `presentation/capture_crop.dart`; `scan_runner.dart`, `idlens_scanner.dart`, `api/scan_options.dart` (docs), `data/image/image_ops.dart`, `presentation/widgets/card_frame_overlay.dart` (`mrzGuideRect`, `marginClipped`, equality), `card_camera_page.dart`, `identity_flow_page.dart`, `idlens.dart` (exports), the example app (re-read uses `DocumentPhoto.file`), the README (three cases), `doc/how_it_works.md` and `CHANGELOG.md`. `image_quality.dart` and `document_framing.dart` are unchanged.
 
-- The photo is cropped to the box, with the same steps in `scan*` and `captureDocument`.
-- A certificate is flattened as it is in `scan*` today, so the app uploads the flattened page too. Check that the backend accepts this.
-- The uncropped photo is deleted after cropping, as idlens already does. The returned photo belongs to the app, which deletes it.
-- The camera shuts down when the method returns, so nothing keeps running during the app's review.
-- The app returning from the background restores the preview.
-- If permission is denied or the camera fails, the method throws `ScanException` instead of leaving the user on an error screen.
-- The whole camera image is shown with black bars where needed, so the box lines up with the real photo.
-- An app in Arabic gets an Arabic, right-to-left camera with no setup, and any other language falls back to English.
-- Text passed in `labels` always replaces the built-in text.
-- `ScanException` stays as codes, so each app writes its own error message.
-- The camera works in Arabic on a short screen, with the flash and close buttons on the correct sides.
+**How it was checked:** `flutter analyze` reports no issues for the package or the example. 32 tests pass in a scratch Flutter package without OpenCV: the new `document_photo_test.dart`, the restored `document_guide_test.dart` and `view_crop_test.dart`, and `card_frame_test.dart` (the frame tests moved from the MTN app, plus `marginClipped`). The crop stage inside `process*` needs OpenCV and **was not run**. **Nothing was tried on a phone.**
 
-**Known costs**
+**To check on a phone**
+- The same card through `scanIdCard` and through `DocumentPhoto.camera` + `processIdCard` gives the same status. Compare `diagnostics['framing']` and `['photoCrop']`.
+- A well-placed card on the ID front, ID back, passport and certificate is accepted.
+- A card pushed to one side gives `documentNotInFrame`. A card at about 60% of the box gives `documentNotInFrame`.
+- A phone whose photo shape differs from the preview crops where the box was drawn.
+- `timeout` covers the crop. No crop file is left behind after a timeout. `result.dispose()` deletes the cropped files and leaves `DocumentPhoto.file` inputs and the raw camera file alone.
+- A `scan*` result read again with `DocumentPhoto.file` works.
+- A certificate through `DocumentPhoto.camera` reads as well as through `scanCivilRegistry`, and `diagnostics['pageFlattened']` is true.
 
-- The camera reopens between the ID's front and back, which adds a short delay.
-- The thumbnail of the front on the back step goes away, unless it's added as an option later.
-- Each camera change needs an idlens release. A local path dependency keeps this easy during development.
+**Still needed in the MTN app**
 
-**What to change in the app after the fix**
-
-- Replace the camera in [`document_scanner_camera_page.dart`](../../lib/features/sim/presentation/widgets/document_scanner_camera_page.dart) with `captureDocument`, and delete what's left of that file.
-- Keep `DocumentCaptureSession`, [`document_photo_review.dart`](../../lib/features/sim/presentation/widgets/document_photo_review.dart), the problem dialogs and the translations.
-- Pass the app's own camera text from `en.json` and `ar.json` through `labels`, so that all its copy stays in one place (`ai/rules.md` §9).
-- Show a translated message and one call to action for settings when `ScanException` is thrown.
-- Remove the app's `DocumentType` enum, and use `DocumentKind` and `DocumentSide` in place of its overlapping types (helps P6).
-- Delete crops in the app when they leave the form or the flow ends.
-- Update `docs/GOTCHAS.md`: remove the note about copying idlens' numbers, and note that the app uses `captureDocument` and `process*`, not `scan*`.
-- Update rows 4a–4d in [`docs/testing/DEVICE_SMOKE.md`](../testing/DEVICE_SMOKE.md).
-- Run the 20–30 document accuracy test after this, because the camera affects the results.
-- Close [B21](SIM_REGISTRATION_OCR_BUGS.md#b21-the-crop-may-not-match-the-frame-the-dealer-sees), [B22](SIM_REGISTRATION_OCR_BUGS.md#b22-photos-arent-size-limited), [B23](SIM_REGISTRATION_OCR_BUGS.md#b23-the-camera-isnt-managed-properly) and [B27](SIM_REGISTRATION_OCR_BUGS.md#b27-the-apps-camera-skips-steps-from-idlens-camera) after checking them on a phone.
+- Draw `guide.box` from `DocumentGuide.forPreview(kind:, side:, previewSize: viewportSize, maxHeight: viewportSize.height - AppSize.s60 * 3)`, and the MRZ guide when it isn't null. Map `DocumentType` to idlens: `idCard` is `sudanId` with `front` or `back`, `passport` is `passport` with `dataPage`, `a4` is `civilRegistryCertificate` with `page`. `viewportSize` is the size `_buildCamera` already computes from the `LayoutBuilder`.
+- Stop cropping in `_captureAndCrop`: remove `_cropDocumentImage`, the `compute` call and the `image` package code. Keep the raw photo and build `DocumentPhoto.camera(File(shot.path), box: guide.box, previewSize: viewportSize)`.
+- Carry that `DocumentPhoto` (photo + box + size) where the photo's path is kept today: the capture session, the cubit's `idImages` and `DocumentReaderService.read`. The reader service then calls `processIdCard(front: ..., back: ...)` with them.
+- The review page shows the raw camera photo, not the cropped one. Show it with the box drawn over it, or keep an app thumbnail.
+- Upload `result.images` (the cropped photos) before `dispose()`. They are PNG files, not JPEG: check the upload code and its size.
+- Fix how the photo is taken (B27): `ResolutionPreset.veryHigh` instead of `max`, `lockCaptureOrientation(portraitUp)`, and focus on the middle of the box before the shot.
+- Delete `documentFrameRect`, `mrzGuideRect`, `expandMrzCrop`, the 92% constants and the old frame tests (`document_frame_test.dart`). The same tests now live in idlens.
+- Rewrite the untracked `idlens_guide_contract_test.dart` for this API (`DocumentGuide` and `DocumentPhoto.camera`).
+- Use `DocumentPhoto.file` only for re-reads of `scan*` results or photos from outside; never for a photo the app's own camera took.
+- Update `docs/GOTCHAS.md` (remove the note about copying idlens' numbers) and rows 4a–4d in `docs/testing/DEVICE_SMOKE.md`. Run the 20–30 document accuracy test after this, because the framing affects the results.
+- Close [B21](SIM_REGISTRATION_OCR_BUGS.md#b21-the-crop-may-not-match-the-frame-the-dealer-sees), [B22](SIM_REGISTRATION_OCR_BUGS.md#b22-photos-arent-size-limited), [B23](SIM_REGISTRATION_OCR_BUGS.md#b23-the-camera-isnt-managed-properly) (only the background and torch part is left for the app) and [B27](SIM_REGISTRATION_OCR_BUGS.md#b27-the-apps-camera-skips-steps-from-idlens-camera) after checking them on a phone.
 
 ---
 
 ## I11. `scan*` has its own path and no clear role
 
-- [ ] `scan*` uses `captureDocument`
-- [ ] `options` removed from `process*`
-- [ ] README updated
+- [x] `scan*` uses the same crop as `process*` (2026-11-04, not committed or released)
+- [x] `options` removed from `process*` (2026-11-04)
+- [x] README updated (three cases)
 - [ ] Decided whether to keep `scan*` long term
 
-**Decision:** agreed on 2026-11-02. Keep `scan*` as the English quick start, rebuild it on the new camera, and don't add features to it.
+**Decision:** agreed on 2026-11-02. Keep `scan*` as the English quick start, and don't add features to it. Revised 2026-11-04 together with I10: `scan*` isn't rebuilt on a public camera; it shares the crop function with `process*` instead.
+
+**Summary of the fix (2026-11-04)**
+
+- The built-in camera and `process*` with `DocumentPhoto.camera` both cut the photo with `cropAroundFrame` (see I10), so the same document gives the same photo through either path.
+- The built-in camera no longer flattens a certificate; the flow reads a flat copy (`flatten: true`), as `processCivilRegistry` does. All paths now read the same page the same way.
+- The `options` parameter is removed from `process*`: it accepted `showTips` and `requireValidMrz` but ignored them. `scan*` keeps its options object, whose docs no longer mention `process*`.
+- The README describes the three cases (`scan*`, own camera with `DocumentGuide` + `DocumentPhoto.camera`, finished photos with `DocumentPhoto.file`).
+- `scan*` stays English, with no camera options. An app that wants its own screens or language uses its own camera.
+- **Still open:** whether to keep `scan*` long term. If MTN stays the only real user, it could move to the `example` app as sample code.
 
 **What happens**
 

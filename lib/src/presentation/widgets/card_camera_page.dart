@@ -5,8 +5,8 @@ import 'package:camera/camera.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:idlens/src/api/scan_exception.dart';
-import 'package:idlens/src/services.dart';
 import 'package:idlens/src/domain/document_kind.dart';
+import 'package:idlens/src/presentation/capture_crop.dart';
 import 'package:idlens/src/presentation/widgets/card_frame_overlay.dart';
 
 /// Full-screen camera with a card-shaped border. Pops with the path of the
@@ -218,39 +218,27 @@ class _CardCameraPageState extends State<CardCameraPage> {
       ..showSnackBar(SnackBar(content: Text(message)));
   }
 
-  Future<void> _capture(CardFrame frame) async {
+  /// [previewAspect] is the preview's width / height, so the crop lands right
+  /// even when the photo has another shape.
+  Future<void> _capture(CardFrame frame, double previewAspect) async {
     final controller = _controller;
     if (controller == null || _capturing) return;
     setState(() => _capturing = true);
     try {
       await _focusBeforeCapture(frame);
       final photo = await controller.takePicture();
-      final cropFrame = frame.expanded(CardFrame.captureMargin);
-      final cropped = await IdLensServices.instance.imageOps.crop(
+      // The same crop `process...` makes for a camera photo. A certificate is
+      // not flattened here: a flat copy is made when it is read, so the
+      // margin the framing checks need stays in the photo.
+      final cropped = await cropAroundFrame(
         photo.path,
-        left: cropFrame.left,
-        top: cropFrame.top,
-        right: cropFrame.right,
-        bottom: cropFrame.bottom,
-        portrait: true,
+        frame,
+        viewAspect: previewAspect,
         label: 'card_${widget.side.name}',
       );
-      // A certificate is flattened to a straight A4 sheet when its outline is
-      // found; otherwise the plain crop is kept.
-      var result = cropped;
-      if (widget.kind == DocumentKind.civilRegistryCertificate) {
-        final flat = await IdLensServices.instance.imageOps.cropPage(
-          cropped,
-          label: 'certificate',
-        );
-        if (flat != null) {
-          await IdLensServices.instance.imageOps.deleteTemp(cropped);
-          result = flat;
-        }
-      }
       await File(photo.path).delete().catchError((_) => File(photo.path));
       await _releaseCamera();
-      if (mounted) Navigator.of(context).pop(result);
+      if (mounted) Navigator.of(context).pop(cropped);
     } catch (e) {
       if (mounted) {
         setState(() => _capturing = false);
@@ -378,7 +366,7 @@ class _CardCameraPageState extends State<CardCameraPage> {
                             child: _ShutterButton(
                               onPressed: _capturing
                                   ? null
-                                  : () => _capture(frame),
+                                  : () => _capture(frame, previewAspect),
                             ),
                           ),
                         ),

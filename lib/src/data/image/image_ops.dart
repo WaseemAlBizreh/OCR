@@ -2,6 +2,7 @@ import 'dart:io';
 import 'dart:math' as math;
 
 import 'package:idlens/src/domain/document_framing.dart';
+import 'package:idlens/src/domain/view_crop.dart';
 import 'package:opencv_dart/opencv.dart' as cv;
 import 'package:path_provider/path_provider.dart';
 
@@ -13,6 +14,10 @@ class ImageOps {
   /// some Android devices return even for a portrait capture. When
   /// [minWidth] is set, a narrower result is upscaled to that width, which
   /// helps OCR on thin MRZ characters.
+  ///
+  /// When [viewAspect] is set, the fractions are of a camera preview with
+  /// that width / height, and are moved onto the photo with [ViewCrop] in
+  /// case the photo has a different shape.
   Future<String> crop(
     String inputPath, {
     double left = 0,
@@ -21,6 +26,7 @@ class ImageOps {
     double bottom = 1,
     bool portrait = false,
     int minWidth = 0,
+    double? viewAspect,
     String label = 'crop',
   }) async {
     var mat = await cv.imreadAsync(inputPath);
@@ -34,6 +40,18 @@ class ImageOps {
       if (portrait && mat.cols > mat.rows) {
         mat = await cv.rotateAsync(mat, cv.ROTATE_90_CLOCKWISE);
         toDispose.add(mat);
+      }
+
+      if (viewAspect != null) {
+        final onPhoto = ViewCrop.toPhoto(
+          (left: left, top: top, right: right, bottom: bottom),
+          viewAspect: viewAspect,
+          photoAspect: mat.cols / mat.rows,
+        );
+        left = onPhoto.left;
+        top = onPhoto.top;
+        right = onPhoto.right;
+        bottom = onPhoto.bottom;
       }
 
       final x = (mat.cols * left).round().clamp(0, mat.cols - 1);

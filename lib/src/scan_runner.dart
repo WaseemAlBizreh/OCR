@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:idlens/src/api/id_card_result.dart';
 import 'package:idlens/src/api/passport_result.dart';
 import 'package:idlens/src/api/civil_registry_result.dart';
+import 'package:idlens/src/api/document_photo.dart';
 import 'package:idlens/src/api/scan_outcome.dart';
 import 'package:idlens/src/api/scan_review.dart';
 import 'package:idlens/src/api/scan_status.dart';
@@ -18,6 +19,7 @@ import 'package:idlens/src/domain/image_quality.dart';
 import 'package:idlens/src/domain/mrz_validator.dart';
 import 'package:idlens/src/domain/scan_deadline.dart';
 import 'package:idlens/src/domain/scan_issue.dart';
+import 'package:idlens/src/presentation/capture_crop.dart';
 import 'package:idlens/src/services.dart';
 
 /// What the clarity and framing checks say about one photo.
@@ -30,6 +32,30 @@ class PhotoCheck {
 
   /// How the document sits in the photo, for `diagnostics`.
   final Map<String, dynamic>? framing;
+}
+
+/// The photos of one `process...` read: the files being read now, and which
+/// of them idlens made. Shared by the crop stage, the read and the timeout
+/// result, so every outcome lists the right files.
+class PreparedPhotos {
+  /// Starts with every photo's own file, read as it is.
+  PreparedPhotos(Map<DocumentSide, DocumentPhoto> photos)
+    : paths = {for (final e in photos.entries) e.key: e.value.file.path};
+
+  /// What is read, by side. A cropped photo replaces its raw file here as
+  /// soon as it is made.
+  final Map<DocumentSide, String> paths;
+
+  /// The sides whose path is a crop made by idlens, which the result owns and
+  /// its `dispose()` deletes.
+  final Set<DocumentSide> temporary = {};
+
+  /// Per side, how the photo was cropped, for `diagnostics['photoCrop']`.
+  final Map<String, dynamic> diagnostics = {};
+
+  /// True once the time limit passed and the result was built, so a crop
+  /// finishing after that must delete its own file.
+  bool sealed = false;
 }
 
 /// Runs a document through its pipeline and turns what comes out into a
@@ -107,7 +133,7 @@ class ScanRunner {
   ScanOutcome incomplete(
     DocumentKind kind,
     Map<DocumentSide, String> paths, {
-    bool temporary = true,
+    Set<DocumentSide> temporary = const {},
   }) {
     final images = _images(kind, paths, temporary);
     final now = DateTime.now();
@@ -134,7 +160,7 @@ class ScanRunner {
   /// with [ScanIssue.timedOut] and the images; the work left is skipped.
   Future<IdCardResult> idCard(
     Map<DocumentSide, String> paths, {
-    bool temporary = false,
+    Set<DocumentSide> temporary = const {},
     PhotoCheck? frontCheck,
     Duration? timeout,
   }) => ScanDeadline.run(
@@ -151,8 +177,9 @@ class ScanRunner {
 
   Future<IdCardResult> _idCard(
     Map<DocumentSide, String> paths, {
-    required bool temporary,
+    required Set<DocumentSide> temporary,
     PhotoCheck? frontCheck,
+    Map<String, dynamic> extraDiagnostics = const {},
   }) async {
     final images = _images(DocumentKind.sudanId, paths, temporary);
     final stopwatch = Stopwatch()..start();
@@ -187,6 +214,7 @@ class ScanRunner {
         images: images,
         diagnostics: {
           ..._diagnostics(result, judged.quality, judged.framing, stopwatch),
+          ...extraDiagnostics,
           if (front.quality != null)
             'frontImageQuality': front.quality!.toJson(),
           if (front.framing != null) 'frontFraming': front.framing,
@@ -209,7 +237,7 @@ class ScanRunner {
   /// [timeout] works as for [idCard].
   Future<PassportResult> passport(
     String dataPagePath, {
-    bool temporary = false,
+    Set<DocumentSide> temporary = const {},
     Duration? timeout,
   }) => ScanDeadline.run(
     timeout,
@@ -227,7 +255,8 @@ class ScanRunner {
 
   Future<PassportResult> _passport(
     String dataPagePath, {
-    required bool temporary,
+    required Set<DocumentSide> temporary,
+    Map<String, dynamic> extraDiagnostics = const {},
   }) async {
     final images = _images(DocumentKind.passport, {
       DocumentSide.dataPage: dataPagePath,
@@ -243,12 +272,10 @@ class ScanRunner {
         issueSides: judged.issueSides,
         fieldsToCheck: judged.fieldsToCheck,
         images: images,
-        diagnostics: _diagnostics(
-          result,
-          judged.quality,
-          judged.framing,
-          stopwatch,
-        ),
+        diagnostics: {
+          ..._diagnostics(result, judged.quality, judged.framing, stopwatch),
+          ...extraDiagnostics,
+        },
         scannedAt: result.scannedAt,
         fields: result.identity,
         mrz: result.mrz,
@@ -272,7 +299,7 @@ class ScanRunner {
   /// [pagePath]. A photo with no clear page outline is read as it is.
   Future<CivilRegistryResult> civilRegistry(
     String pagePath, {
-    bool temporary = false,
+    Set<DocumentSide> temporary = const {},
     PhotoCheck? pageCheck,
     bool flatten = false,
     Duration? timeout,
@@ -297,9 +324,10 @@ class ScanRunner {
 
   Future<CivilRegistryResult> _civilRegistry(
     String pagePath, {
-    required bool temporary,
+    required Set<DocumentSide> temporary,
     PhotoCheck? pageCheck,
     required bool flatten,
+    Map<String, dynamic> extraDiagnostics = const {},
   }) async {
     final images = _images(DocumentKind.civilRegistryCertificate, {
       DocumentSide.page: pagePath,
@@ -346,6 +374,7 @@ class ScanRunner {
           'warnings': reading.warnings,
           'rawText': reading.rawText,
           'rawMlKit': reading.rawMlKit,
+          ...extraDiagnostics,
           if (check.quality != null) 'imageQuality': check.quality!.toJson(),
           if (check.framing != null) 'framing': check.framing,
           if (flatten) 'pageFlattened': flatPath != null,
@@ -498,17 +527,192 @@ class ScanRunner {
     'scanMs': stopwatch.elapsedMilliseconds,
   };
 
+  /// Reads photos from the host app's own camera: each `camera` photo is
+  /// first cropped the way idlens' own camera crops (see [cropAroundFrame]),
+  /// then the read goes on as for any photo. The crop runs under [timeout]
+  /// like the rest of the read.
+  ///
+  /// A photo that can't be cropped (the file exists but isn't an image) gives
+  /// a `failed` result with `ScanIssue.processingFailed` and the images made
+  /// so far, so a result exists whenever an image does.
+  Future<IdCardResult> idCardFromPhotos(
+    Map<DocumentSide, DocumentPhoto> photos, {
+    Duration? timeout,
+  }) {
+    const kind = DocumentKind.sudanId;
+    final prepared = PreparedPhotos(photos);
+    return ScanDeadline.run(
+      timeout,
+      () async {
+        final failure = await _prepare(photos, prepared);
+        if (failure != null) {
+          return IdCardResult(
+            status: ScanStatus.failed,
+            issue: ScanIssue.processingFailed,
+            images: _images(kind, prepared.paths, prepared.temporary),
+            diagnostics: {'error': failure},
+            scannedAt: DateTime.now(),
+          );
+        }
+        return _idCard(
+          prepared.paths,
+          temporary: prepared.temporary,
+          extraDiagnostics: {'photoCrop': prepared.diagnostics},
+        );
+      },
+      () {
+        prepared.sealed = true;
+        return IdCardResult(
+          status: ScanStatus.failed,
+          issue: ScanIssue.timedOut,
+          images: _images(kind, prepared.paths, prepared.temporary),
+          diagnostics: _timedOutAfter(timeout!),
+          scannedAt: DateTime.now(),
+        );
+      },
+    );
+  }
+
+  /// As [idCardFromPhotos], for a passport's data page.
+  Future<PassportResult> passportFromPhoto(
+    DocumentPhoto photo, {
+    Duration? timeout,
+  }) {
+    const kind = DocumentKind.passport;
+    const side = DocumentSide.dataPage;
+    final photos = {side: photo};
+    final prepared = PreparedPhotos(photos);
+    return ScanDeadline.run(
+      timeout,
+      () async {
+        final failure = await _prepare(photos, prepared);
+        if (failure != null) {
+          return PassportResult(
+            status: ScanStatus.failed,
+            issue: ScanIssue.processingFailed,
+            images: _images(kind, prepared.paths, prepared.temporary),
+            diagnostics: {'error': failure},
+            scannedAt: DateTime.now(),
+          );
+        }
+        return _passport(
+          prepared.paths[side]!,
+          temporary: prepared.temporary,
+          extraDiagnostics: {'photoCrop': prepared.diagnostics},
+        );
+      },
+      () {
+        prepared.sealed = true;
+        return PassportResult(
+          status: ScanStatus.failed,
+          issue: ScanIssue.timedOut,
+          images: _images(kind, prepared.paths, prepared.temporary),
+          diagnostics: _timedOutAfter(timeout!),
+          scannedAt: DateTime.now(),
+        );
+      },
+    );
+  }
+
+  /// As [idCardFromPhotos], for a certificate page. A flat copy of the page
+  /// is read, as for [civilRegistry] with `flatten`.
+  Future<CivilRegistryResult> civilRegistryFromPhoto(
+    DocumentPhoto photo, {
+    Duration? timeout,
+  }) {
+    const kind = DocumentKind.civilRegistryCertificate;
+    const side = DocumentSide.page;
+    final photos = {side: photo};
+    final prepared = PreparedPhotos(photos);
+    return ScanDeadline.run(
+      timeout,
+      () async {
+        final failure = await _prepare(photos, prepared);
+        if (failure != null) {
+          return CivilRegistryResult(
+            status: ScanStatus.failed,
+            issue: ScanIssue.processingFailed,
+            images: _images(kind, prepared.paths, prepared.temporary),
+            diagnostics: {'error': failure},
+            scannedAt: DateTime.now(),
+          );
+        }
+        return _civilRegistry(
+          prepared.paths[side]!,
+          temporary: prepared.temporary,
+          flatten: true,
+          extraDiagnostics: {'photoCrop': prepared.diagnostics},
+        );
+      },
+      () {
+        prepared.sealed = true;
+        return CivilRegistryResult(
+          status: ScanStatus.failed,
+          issue: ScanIssue.timedOut,
+          images: _images(kind, prepared.paths, prepared.temporary),
+          diagnostics: _timedOutAfter(timeout!),
+          scannedAt: DateTime.now(),
+        );
+      },
+    );
+  }
+
+  /// Crops the camera photos; returns what went wrong, or null. A time limit
+  /// passing is not a failure of the photo and is rethrown.
+  Future<String?> _prepare(
+    Map<DocumentSide, DocumentPhoto> photos,
+    PreparedPhotos prepared,
+  ) async {
+    try {
+      await _cropCameraPhotos(photos, prepared);
+      return null;
+    } on ScanTimedOutException {
+      rethrow;
+    } catch (error) {
+      return '$error';
+    }
+  }
+
+  Future<void> _cropCameraPhotos(
+    Map<DocumentSide, DocumentPhoto> photos,
+    PreparedPhotos prepared,
+  ) async {
+    for (final MapEntry(key: side, value: photo) in photos.entries) {
+      if (!photo.isCamera) continue;
+      final path = await cropAroundFrame(
+        photo.file.path,
+        photo.frame,
+        viewAspect: photo.viewAspect,
+        label: 'process_${side.name}',
+        imageOps: _services.imageOps,
+      );
+      if (prepared.sealed) {
+        // The time limit passed while cropping: the result was built without
+        // this file, so nothing else would delete it.
+        await _services.imageOps.deleteTemp(path);
+        throw const ScanTimedOutException();
+      }
+      prepared.paths[side] = path;
+      prepared.temporary.add(side);
+      prepared.diagnostics[side.name] = {
+        'camera': true,
+        'marginClipped': photo.frame.marginClipped,
+      };
+      ScanDeadline.check();
+    }
+  }
+
   static List<ScannedImage> _images(
     DocumentKind kind,
     Map<DocumentSide, String> paths,
-    bool temporary,
+    Set<DocumentSide> temporary,
   ) => [
     for (final side in kind.sides)
       if (paths[side] != null)
         ScannedImage(
           side: side,
           file: File(paths[side]!),
-          isTemporary: temporary,
+          isTemporary: temporary.contains(side),
         ),
   ];
 }
