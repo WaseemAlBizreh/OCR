@@ -11,14 +11,6 @@ gives you the document photos back, ready to upload.
 
 Everything runs on the device. No image or text ever leaves the phone.
 
-```dart
-final result = await const IdLens().scanPassport(context);
-
-print(result?.status);       // ScanStatus.verified
-print(result?.englishName);  // the name read from the passport
-print(result?.dateOfBirth);  // a real DateTime
-```
-
 ## Contents
 
 - [Start here: which way should I use?](#start-here-which-way-should-i-use)
@@ -62,6 +54,23 @@ idlens has two ways in. The only question is **who owns the camera screen**.
 | Tips, camera, preview, retake | Built in | Yours |
 | Framing checks (blurry, far, cut off) | Full | Full with your own camera (2a). For finished photos (2b) it depends on the photo |
 | Best for | A quick start, prototypes, internal tools | Production apps with their own look, and any app that isn't English-only |
+
+**The same passport, both ways:**
+
+```dart
+// Way 1: idlens opens its own screens.
+final result = await const IdLens().scanPassport(context);
+
+// Way 2: you take the photo, idlens crops it and reads it.
+final result = await const IdLens().processPassport(
+  dataPage: DocumentPhoto.camera(photo, box: guide.box, previewSize: cameraArea),
+);
+```
+
+Both return the same kind of result (a `PassportResult` with a `status`, an
+`issue`, the `fieldsToCheck` and the images). Way 1 returns `null` if the user
+leaves before capturing anything. Full examples, with error handling, are in
+[Way 1](#way-1-scan-everything-ready-made) and [Way 2](#way-2-process-you-bring-the-photos).
 
 **The short answer:**
 
