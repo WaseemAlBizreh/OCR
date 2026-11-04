@@ -1,4 +1,57 @@
-## Unreleased
+## 0.2.0
+
+**Breaking release.** `process...` now take a `DocumentPhoto`, and a result says
+what to do in two members instead of text to read. The first part of this entry
+is a short guide to upgrading; the full list of changes follows it.
+
+### Upgrading from 0.1.x
+
+**1. Wrap the photos you pass to `process...`.** A `File` is no longer accepted.
+
+```dart
+// Before (0.1.x)
+final result = await const IdLens().processIdCard(front: frontFile, back: backFile);
+
+// After, for photos your own camera just took: idlens crops them.
+final guide = DocumentGuide.forPreview(
+  kind: DocumentKind.sudanId,
+  side: DocumentSide.front,
+  previewSize: cameraArea, // the area the camera image fills on screen
+); // draw guide.box over your camera, and the same for the back
+final result = await const IdLens().processIdCard(
+  front: DocumentPhoto.camera(frontFile, box: guide.box, previewSize: cameraArea),
+  back: DocumentPhoto.camera(backFile, box: backGuide.box, previewSize: cameraArea),
+);
+
+// After, for finished photos (a server, the gallery, a scan read again).
+final result = await const IdLens().processIdCard(
+  front: DocumentPhoto.file(frontFile),
+  back: DocumentPhoto.file(backFile),
+);
+```
+
+The `options` parameter of `process...` is removed: it was ignored.
+
+**2. Read `issue`, `fieldsToCheck` and `status` instead of `issues` and `warnings`.**
+
+```dart
+// Before                          // After
+result.issues                      result.issue          // one ScanIssue, or null
+result.warnings                    result.fieldsToCheck  // keys of the fields to look at
+ScanIssue.mrzNotFound              ScanIssue.imageNotClear (or documentNotInFrame)
+ScanIssue.mrzCheckDigitsFailed     the fields the digit covers are in fieldsToCheck
+result.confidence                  removed (use fieldsToCheck)
+```
+
+**3. Check `result.images` before `dispose()`.** For a `DocumentPhoto.camera`, the
+images are the cropped photos: temporary files that `dispose()` deletes, so
+upload them first. A `DocumentPhoto.file` image is your own file and is never
+deleted.
+
+**4. Optional:** pass a `timeout` to `process...` (or in the `scan...` options),
+and use `issueSides` to retake only the page that caused an issue.
+
+### All changes
 
 **Breaking:** the result says what to do in two members instead of reading
 text.
@@ -50,8 +103,9 @@ text.
   now checked too.
 - The built-in camera keeps a margin of background around the frame for every
   document, not only on MRZ pages, and the frame is a little smaller so that
-  margin always fits. For `process...`, keep a thin strip of background
-  around the document too (see the README).
+  margin always fits. For `process...`, use `DocumentPhoto.camera` so idlens
+  makes the same margin, or keep a thin strip of background around the
+  document yourself for a `DocumentPhoto.file` (see the README).
 - Fixed: an MRZ cut off by the photo was padded and accepted, so a name could
   lose its last letters with no warning (names have no check digit). An MRZ
   line that is missing its first or last characters now gives
@@ -80,9 +134,29 @@ text.
   flow offers "Try again" for it.
 - `diagnostics` has a new `framing` entry (and `frontFraming` for an ID card)
   saying how the framing was judged.
+- **Breaking:** the `process...` methods take a `DocumentPhoto` instead of a
+  `File`, and no longer take an `options` parameter (it was ignored). Wrap each
+  photo as `DocumentPhoto.camera(file, box:, previewSize:)` for a raw photo
+  from your own camera, which idlens now crops inside the call, or as
+  `DocumentPhoto.file(file)` for a finished photo, which is read as it is (the
+  old behaviour). The cut-off and "too far" checks were tuned on photos with a
+  thin strip of background around the document, which idlens' own camera makes
+  and other cameras usually don't; cropping inside `process...` gives the same
+  photo whichever way an app scans. For a camera photo, the result's `images`
+  are the cropped photos (temporary files that `dispose()` deletes), and
+  `diagnostics['photoCrop']` says how each was cropped.
+- New `DocumentGuide.forPreview`: the box (and, for an ID back or a passport,
+  the MRZ guide) to draw on your own camera screen, with idlens' own numbers,
+  so the app doesn't copy them. An optional `maxHeight` makes the box smaller
+  when buttons need room.
+- The built-in camera and `process...` share one crop. The built-in camera no
+  longer flattens a certificate: a flat copy is made when the page is read, so
+  the margin the framing checks need stays in the photo.
+- On a phone whose photos have a different shape from the camera preview, the
+  crop could land in the wrong place. The box is now mapped onto the photo.
 - `processCivilRegistry` now straightens a tilted or distant page to a flat A4
-  sheet before reading it, as the built-in camera does. A photo with no clear
-  page outline is read as before. The file passed in isn't changed and is
+  sheet before reading it (the built-in flow reads a flat copy the same way).
+  A photo with no clear page outline is read as before. The file passed in isn't changed and is
   still the result's image; `diagnostics['pageFlattened']` says whether the
   page was straightened.
 

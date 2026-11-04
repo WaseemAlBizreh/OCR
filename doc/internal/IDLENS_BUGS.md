@@ -897,7 +897,7 @@ Run the same flattening inside `processCivilRegistry`, and fall back to the plai
 
 ## I10. Apps with their own camera get photos the checks were not tuned for
 
-- [x] Fixed in idlens (2026-11-04, not committed or released)
+- [x] Fixed in idlens (2026-11-04, committed in bee94e1, not published)
 - [ ] Checked on a phone
 - [ ] Adopted in the app
 
@@ -965,7 +965,7 @@ idlens' cut-off (I5) and "too far" (I8) checks were tuned on photos cut the way 
 
 ## I11. `scan*` has its own path and no clear role
 
-- [x] `scan*` uses the same crop as `process*` (2026-11-04, not committed or released)
+- [x] `scan*` uses the same crop as `process*` (2026-11-04, committed in bee94e1, not published)
 - [x] `options` removed from `process*` (2026-11-04)
 - [x] README updated (three cases)
 - [ ] Decided whether to keep `scan*` long term
