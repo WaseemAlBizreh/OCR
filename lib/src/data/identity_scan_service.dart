@@ -4,6 +4,7 @@ import 'package:idlens/src/data/front/sudan_card_parser.dart';
 import 'package:idlens/src/data/image/image_ops.dart';
 import 'package:idlens/src/data/mrz/mrz_reader.dart';
 import 'package:idlens/src/data/ocr/card_text_recognizer.dart';
+import 'package:idlens/src/domain/date_rules.dart';
 import 'package:idlens/src/domain/document_kind.dart';
 import 'package:idlens/src/domain/identity_scan_result.dart';
 import 'package:idlens/src/domain/mrz_data.dart';
@@ -147,7 +148,20 @@ class IdentityScanService {
       back?['expiryDate'],
     );
     final issueDate = _toIsoDate(back?['issueDate']) ?? back?['issueDate'];
-    _checkIssueBeforeExpiry(issueDate, expiryDate, warnings, doubtful);
+    final dateOfBirth = crossChecked(
+      'dateOfBirth',
+      'Date of birth',
+      mrz?.dateOfBirth,
+      trusted('dateOfBirth'),
+      front?['dateOfBirth'],
+    );
+    DateRules.check(
+      birthDate: dateOfBirth,
+      issueDate: issueDate,
+      expiryDate: expiryDate,
+      warnings: warnings,
+      doubtful: doubtful,
+    );
 
     return {
       'documentType': mrz?.documentCode,
@@ -157,13 +171,7 @@ class IdentityScanService {
       'englishName': mrz?.fullName,
       'surname': mrz?.surname,
       'givenNames': mrz?.givenNames,
-      'dateOfBirth': crossChecked(
-        'dateOfBirth',
-        'Date of birth',
-        mrz?.dateOfBirth,
-        trusted('dateOfBirth'),
-        front?['dateOfBirth'],
-      ),
+      'dateOfBirth': dateOfBirth,
       'sex': mrz?.sex,
       'nationality': mrz?.nationality,
       'issuingCountry': mrz?.issuingCountry,
@@ -202,25 +210,6 @@ class IdentityScanService {
     return printedIso ?? printed ?? mrzValue;
   }
 
-  /// An issue date on or after the expiry date cannot be right (ISO dates
-  /// compare as text). It is kept as read and marked for the user to check.
-  static void _checkIssueBeforeExpiry(
-    String? issueDate,
-    String? expiryDate,
-    List<String> warnings,
-    Set<String> doubtful,
-  ) {
-    if (issueDate == null ||
-        expiryDate == null ||
-        issueDate.compareTo(expiryDate) < 0) {
-      return;
-    }
-    doubtful.add('issueDate');
-    warnings.add(
-      'Issue date ($issueDate) is not before the expiry date ($expiryDate).',
-    );
-  }
-
   /// Passport payload: the MRZ for everything it holds, the printed data page
   /// for what the MRZ lacks (place of birth, issue date and place, national
   /// number, Arabic name).
@@ -242,7 +231,22 @@ class IdentityScanService {
       page?['expiryDate'],
     );
     final issueDate = _toIsoDate(page?['issueDate']) ?? page?['issueDate'];
-    _checkIssueBeforeExpiry(issueDate, expiryDate, warnings, doubtful);
+    final dateOfBirth = _crossChecked(
+      warnings,
+      doubtful,
+      'dateOfBirth',
+      'Date of birth',
+      mrz?.dateOfBirth,
+      trusted('dateOfBirth'),
+      page?['dateOfBirth'],
+    );
+    DateRules.check(
+      birthDate: dateOfBirth,
+      issueDate: issueDate,
+      expiryDate: expiryDate,
+      warnings: warnings,
+      doubtful: doubtful,
+    );
 
     // Sudanese passports carry the national number in the MRZ personal-number
     // field as well as on the printed page.
@@ -269,15 +273,7 @@ class IdentityScanService {
       'englishName': mrz?.fullName,
       'surname': mrz?.surname,
       'givenNames': mrz?.givenNames,
-      'dateOfBirth': _crossChecked(
-        warnings,
-        doubtful,
-        'dateOfBirth',
-        'Date of birth',
-        mrz?.dateOfBirth,
-        trusted('dateOfBirth'),
-        page?['dateOfBirth'],
-      ),
+      'dateOfBirth': dateOfBirth,
       'sex': mrz?.sex,
       'nationality': mrz?.nationality,
       'nationalityText': page?['nationalityText'],

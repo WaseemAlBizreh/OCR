@@ -785,8 +785,8 @@ For a field in `fieldsToCheck`, the value tells you why it's there:
 | Value | When | `issue` |
 |---|---|---|
 | `verified` | No issue, and `fieldsToCheck` is empty. For ID cards and passports, every MRZ check digit passed and the printed values agree with the MRZ. | `null` |
-| `needsReview` | The photo isn't clear, or at least one field is in `fieldsToCheck`. | `imageNotClear` or `null` |
-| `failed` | Wrong document, not in the frame, the text reader couldn't start, reading took longer than `timeout`, or processing failed. Also when nothing identifying was read: no MRZ on an ID card or passport, or none of a certificate's required fields. | Always set |
+| `needsReview` | Everything identifying was read, but the photo isn't clear or the document isn't fully in the frame, or at least one field is in `fieldsToCheck`. | `imageNotClear`, `documentNotInFrame` or `null` |
+| `failed` | Wrong document, not in the frame, the text reader couldn't start, reading took longer than `timeout`, or processing failed. Also when nothing identifying was read: no MRZ on an ID card or passport, none of an ID front's or certificate's required fields. | Always set |
 | `incomplete` | The user left before every page was captured. Nothing was read. | `null` |
 
 A civil registry certificate has no MRZ, so for it `verified` only means the
@@ -800,17 +800,18 @@ value is never an issue: that field goes in `fieldsToCheck` instead.
 
 | Value | Meaning | ID card | Passport | Certificate | Status |
 |---|---|---|---|---|---|
-| `wrongDocument` | An MRZ of a different document type was found. | ✓ | ✓ | – | `failed` |
-| `documentNotInFrame` | The document is missing, too far away or cut off. | ✓ | ✓ | ✓ | `failed` |
+| `wrongDocument` | An MRZ of a different document type was found, or a Sudan ID whose MRZ is not Sudanese. | ✓ | ✓ | – | `failed` |
+| `documentNotInFrame` | The document is missing, too far away or cut off. | ✓ | ✓ | ✓ | `needsReview` when everything identifying was still read, otherwise `failed` |
 | `processingFailed` | An unexpected error while reading. The images are still returned. | ✓ | ✓ | ✓ | `failed` |
 | `readerUnavailable` | idlens couldn't start its text reader on this phone, for example with too little free storage. The photos are fine: offer to read the same files again rather than a retake. The next read loads the reader again. | ✓ | ✓ | ✓ | `failed` |
 | `timedOut` | Reading took longer than the `timeout` you passed. The photos are fine: offer to read them again. | ✓ | ✓ | ✓ | `failed` |
-| `imageNotClear` | The photo is too dark, blurry or has glare. Also given when the document is in the frame but its MRZ couldn't be read, or a certificate has none of its required fields. | ✓ | ✓ | ✓ | `needsReview`, or `failed` when nothing identifying was read |
+| `contentNotFound` | The page is in the frame and the photo is clear, but what it must hold was not found: the MRZ on a back or passport page, the required fields on an ID front or a certificate. Often the wrong side was photographed (the front or the back twice). | ✓ | ✓ | ✓ | `failed` |
+| `imageNotClear` | The photo is too dark, blurry or has glare. | ✓ | ✓ | ✓ | `needsReview`, or `failed` when nothing identifying was read |
 
 An ID card has two photos, so `issue` is the more serious of the two:
 `wrongDocument`, then `readerUnavailable`, then `timedOut`, then
 `processingFailed`, then
-`documentNotInFrame`, then `imageNotClear`.
+`documentNotInFrame`, then `contentNotFound`, then `imageNotClear`.
 
 `issueSides` says which photos to retake, so the user doesn't have to retake a
 good one:
@@ -820,7 +821,8 @@ good one:
 | The ID back is blurry, the front is fine | `[back]` |
 | The ID front is cut off, the back is fine | `[front]` |
 | Both ID photos have a problem | `[front, back]`, even when the problems differ |
-| No MRZ was found and no photo check failed | The MRZ page (`back`, `dataPage`), or the certificate `page` |
+| The MRZ (back, `dataPage`) or the required fields (certificate `page`) were not found and no photo check failed | That page |
+| An ID front holds no name or national number and its photo check passed | `[front]` |
 | `wrongDocument` | Every page |
 | A passport or certificate photo problem | Its only page |
 | No issue, `processingFailed`, `readerUnavailable` or `timedOut` | Empty: no photo is to blame |

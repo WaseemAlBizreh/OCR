@@ -65,15 +65,24 @@ class ScanReview {
     return marked.toList()..sort((a, b) => rank(a).compareTo(rank(b)));
   }
 
+  /// Whether at least one of the document's required fields was read. A
+  /// passport has none, so it always passes.
+  static bool hasRequiredContent(
+    DocumentKind kind,
+    Map<String, dynamic> fields,
+  ) {
+    final required = requiredFields[kind]!;
+    return required.isEmpty || required.any((key) => !_isEmpty(fields[key]));
+  }
+
   /// False when nothing that identifies the document was read: no MRZ on an
-  /// ID card or passport, or none of a certificate's required fields.
+  /// ID card or passport, none of an ID card's or certificate's required
+  /// fields.
   static bool isReadable({
     required DocumentKind kind,
     required Map<String, dynamic> fields,
     MrzData? mrz,
-  }) => kind.hasMrz
-      ? mrz != null
-      : requiredFields[kind]!.any((key) => !_isEmpty(fields[key]));
+  }) => (!kind.hasMrz || mrz != null) && hasRequiredContent(kind, fields);
 
   /// The more serious of two photos' issues (an ID card has two). On a tie the
   /// first one, the front, is kept.
@@ -83,13 +92,21 @@ class ScanReview {
     return _severity[second]! < _severity[first]! ? second : first;
   }
 
+  static const _systemOrWrong = {
+    ScanIssue.wrongDocument,
+    ScanIssue.readerUnavailable,
+    ScanIssue.timedOut,
+    ScanIssue.processingFailed,
+  };
+
   static const _severity = {
     ScanIssue.wrongDocument: 0,
     ScanIssue.readerUnavailable: 1,
     ScanIssue.timedOut: 2,
     ScanIssue.processingFailed: 3,
     ScanIssue.documentNotInFrame: 4,
-    ScanIssue.imageNotClear: 5,
+    ScanIssue.contentNotFound: 5,
+    ScanIssue.imageNotClear: 6,
   };
 
   /// The pages to retake for [issue], in document order: each page whose own
@@ -110,7 +127,9 @@ class ScanReview {
         return const [];
       case ScanIssue.wrongDocument:
         return kind.sides;
-      case ScanIssue.documentNotInFrame || ScanIssue.imageNotClear:
+      case ScanIssue.documentNotInFrame ||
+          ScanIssue.imageNotClear ||
+          ScanIssue.contentNotFound:
         final sides = [
           for (final side in kind.sides)
             if (photos[side] != null) side,
@@ -119,21 +138,18 @@ class ScanReview {
     }
   }
 
-  /// The issue to report: an unreadable document always has one, so the app
-  /// can say why it failed.
-  static ScanIssue? issueFor(ScanIssue? issue, {required bool readable}) =>
-      issue ?? (readable ? null : ScanIssue.imageNotClear);
-
-  /// - `failed`: the document is unreadable, wrong, out of the frame, the
-  ///   reader couldn't start, reading took too long, or reading crashed.
-  /// - `needsReview`: the photo is not clear, or a field needs checking.
+  /// - `failed`: the document is unreadable (see [isReadable]), is the wrong
+  ///   document, the reader couldn't start, reading took too long, or reading
+  ///   crashed.
+  /// - `needsReview`: everything identifying was read, but the photo is not
+  ///   clear or not fully in the frame, or a field needs checking.
   /// - `verified`: neither.
   static ScanStatus statusFor({
     required ScanIssue? issue,
     required bool readable,
     required List<String> fieldsToCheck,
   }) {
-    if (!readable || (issue != null && issue != ScanIssue.imageNotClear)) {
+    if (!readable || (issue != null && _systemOrWrong.contains(issue))) {
       return ScanStatus.failed;
     }
     if (issue != null || fieldsToCheck.isNotEmpty) {

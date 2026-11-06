@@ -6,12 +6,14 @@ enum ScanStatus {
   /// values agree with it. Optional fields that were not read are null.
   verified,
 
-  /// The values were read, but the photo is not clear
-  /// (`ScanIssue.imageNotClear`) or at least one field is in `fieldsToCheck`.
+  /// Everything identifying was read, but the photo is not clear
+  /// (`ScanIssue.imageNotClear`), the document is not fully in the frame
+  /// (`ScanIssue.documentNotInFrame`), or at least one field is in
+  /// `fieldsToCheck`.
   needsReview,
 
-  /// The document could not be read: it is the wrong document, is not in the
-  /// frame, nothing identifying was read (no MRZ, or none of a certificate's
+  /// The document could not be read: it is the wrong document, nothing
+  /// identifying was read (no MRZ, or none of an ID front's or certificate's
   /// required fields), or processing failed. `issue` says which. The images
   /// are still returned.
   failed,

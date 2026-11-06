@@ -45,16 +45,6 @@ class IdentityScanResult {
   final List<String> doubtfulFields;
   final DateTime scannedAt;
 
-  /// How many printed fields (front, back or data page) were read.
-  int get recognizedFieldCount =>
-      [frontFields, backFields, dataPageFields].fold(
-        0,
-        (count, fields) =>
-            count +
-            (fields?.values.where((v) => v != null && v.isNotEmpty).length ??
-                0),
-      );
-
   Map<String, dynamic> toJson() => {
     'documentKind': documentKind.name,
     'identity': identity,

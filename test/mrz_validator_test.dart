@@ -37,6 +37,15 @@ void main() {
       expect(validator.isWrongDocument(idCard, DocumentKind.passport), isTrue);
     });
 
+    test('an ID card of another country is not a Sudan ID', () {
+      final other = parser.parseText(
+        'IDEGY0085936669<<<<<<<<<<<<<<<\n'
+        '9209231M2705169EGY<<<<<<<<<<<4\n'
+        'OSMAN<<MERGHANI<MEKKI<MERGHANI\n',
+      );
+      expect(validator.isWrongDocument(other, DocumentKind.sudanId), isTrue);
+    });
+
     test('the matching document passes', () {
       expect(validator.isWrongDocument(idCard, DocumentKind.sudanId), isFalse);
     });

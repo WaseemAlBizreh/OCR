@@ -157,8 +157,8 @@ short-lived worker isolate.
 - A value from the **MRZ wins** when its own check digit passed.
 - **Printed values fill the rest.**
 - A printed value that **disagrees with the MRZ**, or a **date that can't be
-  right** (an issue date on or after the expiry date, a birth date not before the
-  issue date), is **kept and marked as doubtful**. idlens never clears a value it
+  right** (an issue date on or after the expiry date; on a certificate also a birth
+  date not before the issue date), is **kept and marked as doubtful**. idlens never clears a value it
   read: it tells you to look at it.
 
 ### 6. Review
@@ -177,7 +177,7 @@ An ID card has two photos, so the front's and the back's checks are kept apart:
 `issueSides` can name only the side that caused the issue, and the user doesn't
 retake a good photo. When both photos have problems, the more serious issue is
 reported, in this order: `wrongDocument`, `readerUnavailable`, `timedOut`,
-`processingFailed`, `documentNotInFrame`, `imageNotClear`.
+`processingFailed`, `documentNotInFrame`, `contentNotFound`, `imageNotClear`.
 
 ### 7. The result
 

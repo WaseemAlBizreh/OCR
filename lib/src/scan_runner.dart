@@ -26,7 +26,8 @@ import 'package:idlens/src/services.dart';
 class PhotoCheck {
   const PhotoCheck({this.issue, this.quality, this.framing});
 
-  /// [ScanIssue.imageNotClear], [ScanIssue.documentNotInFrame] or null.
+  /// [ScanIssue.imageNotClear], [ScanIssue.contentNotFound],
+  /// [ScanIssue.documentNotInFrame] or null.
   final ScanIssue? issue;
   final ImageQuality? quality;
 
@@ -85,7 +86,6 @@ class ScanRunner {
     );
     final verdict = await _framing(path, kind, frame);
     final issue = ScanIssueResolver.resolve(
-      recognizedFields: 0,
       imageIssue: quality?.problem,
       cutOff: verdict.cutOff,
     );
@@ -350,7 +350,10 @@ class ScanRunner {
         kind: kind,
         fields: reading.fields,
       );
-      final issue = ScanReview.issueFor(check.issue, readable: readable);
+      final issue = ScanIssueResolver.resolve(
+        contentMissing: !readable,
+        imageIssue: check.issue,
+      );
       final fieldsToCheck = ScanReview.fieldsToCheck(
         kind: kind,
         fields: reading.fields,
@@ -466,22 +469,26 @@ class ScanRunner {
     }
     final resolved = ScanIssueResolver.resolve(
       wrongDocument: wrongDocument,
-      mrzMissing: result.mrz == null,
-      recognizedFields: result.recognizedFieldCount,
+      contentMissing: result.mrz == null,
       imageIssue: quality?.problem,
       // A cut MRZ line is proof on its own, even when the photo checks
       // can't tell.
       cutOff: (verdict?.cutOff ?? false) || (result.mrz?.cutOff ?? false),
     );
+    // The front, like the back, must hold what it should: a back photographed
+    // twice shows no name or national number. A photo problem comes first.
+    final frontProblem =
+        frontIssue ??
+        (kind == DocumentKind.sudanId &&
+                !ScanReview.hasRequiredContent(kind, result.identity)
+            ? ScanIssue.contentNotFound
+            : null);
     final readable = ScanReview.isReadable(
       kind: kind,
       fields: result.identity,
       mrz: result.mrz,
     );
-    final issue = ScanReview.issueFor(
-      ScanReview.worse(frontIssue, resolved),
-      readable: readable,
-    );
+    final issue = ScanReview.worse(frontProblem, resolved);
     final fieldsToCheck = ScanReview.fieldsToCheck(
       kind: kind,
       fields: result.identity,
@@ -494,7 +501,7 @@ class ScanRunner {
         issue,
         kind: kind,
         photos: {
-          if (kind == DocumentKind.sudanId) DocumentSide.front: frontIssue,
+          if (kind == DocumentKind.sudanId) DocumentSide.front: frontProblem,
           kind.sides.last: resolved,
         },
       ),

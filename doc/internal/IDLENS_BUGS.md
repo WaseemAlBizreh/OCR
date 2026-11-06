@@ -17,6 +17,8 @@ These bugs are in the `idlens` package ([`WaseemAlBizreh/OCR`](https://github.co
 | [I9](#i9-processcivilregistry-doesnt-flatten-the-page) | `processCivilRegistry` doesn't flatten the page | **Fixed, not released** | Next release |
 | [I10](#i10-apps-with-their-own-camera-get-photos-the-checks-were-not-tuned-for) | Apps with their own camera get photos the checks weren't tuned for | **Fixed, not released** (phone check needed) | Next release (breaking: `process*` take `DocumentPhoto`) |
 | [I11](#i11-scan-has-its-own-path-and-no-clear-role) | `scan*` has its own path and no clear role | **Fixed, not released** (long-term decision open) | Next release |
+| [I12](#i12-validation-gaps-and-a-pile-of-overlapping-rules-2026-11-06) | Validation gaps and overlapping rules | **Fixed, not released** | Next release |
+| [I13](#i13-a-clear-photo-is-flagged-imagenotclear-quality-measured-on-the-wrong-area-and-limits-are-guesses) | A clear photo is flagged `imageNotClear` | **Open: needs device photos** | Next release |
 
 ## Recommended order
 
@@ -1019,6 +1021,134 @@ It isn't known yet whether any other app uses idlens. If MTN turns out to be the
 - Nothing for the `scan*` changes, because the app doesn't call it.
 - Check that the app doesn't pass `options` to `process*` when it upgrades to 0.2.0. Today's [`document_reader_service.dart`](../../lib/core/services/document_reader/document_reader_service.dart) doesn't.
 - Keep the `docs/GOTCHAS.md` note that the app uses `captureDocument` and `process*`, not `scan*`.
+
+---
+
+## I12. Validation gaps and a pile of overlapping rules (2026-11-06)
+
+Found by a review after a real scan of the front photographed twice returned
+`imageNotClear` for the back.
+
+**Fixed (unreleased, not committed)**
+
+- A missing MRZ, or a page with none of its required fields, is the new
+  `ScanIssue.contentNotFound`. It was reported as `imageNotClear`, which blamed
+  the photo.
+- A back photographed twice is caught on the front (`contentNotFound`,
+  `issueSides: [front]`), like a front photographed twice on the back.
+- `documentNotInFrame` is `needsReview` when everything identifying was read.
+- A Sudan ID needs `SDN` as issuing country or nationality.
+- `DateRules`: future birth date, birth date on or after issue/expiry, issue on
+  or after expiry. Only real dates are compared.
+- One resolver (`ScanIssueResolver.resolve`) for every document; the
+  "fewer than 2 fields" rule, `recognizedFieldCount` and `issueFor` are gone;
+  the notice text uses `issue` and `issueSides` only.
+
+**Still open:** quality measured on the bottom strip (brightness 102.6 on a
+sharp photo flagged), provisional quality limits, two-digit birth years, no end-to-end test. See
+[VALIDATION_RULES.md](VALIDATION_RULES.md).
+
+**For the app:** handle `contentNotFound` in any exhaustive `switch` on
+`ScanIssue`; `documentNotInFrame` may now come with `needsReview`.
+
+---
+
+## I13. A clear photo is flagged `imageNotClear`: quality measured on the wrong area, and the limits are guesses
+
+Two linked problems, found on 2026-11-06 (called R1 and R2 in the review). Both
+are open until they are tested on real photos.
+
+**What happens**
+
+A real Sudan ID back, sharp to the eye, came back with
+`issue: imageNotClear`, and `status: failed` because its MRZ was not found.
+Its `diagnostics.imageQuality`:
+
+| Measure | Value | Limit | Result |
+|---|---|---|---|
+| `sharpness` | 221.3 | below 60 is not clear | ok |
+| `brightness` | **102.6** | below 110 is not clear | **flagged** |
+| `glareShare` | 0.0004 | above 0.20 is not clear | ok |
+| `documentCoverage` | 0.69 | below 0.42 is too far | ok |
+
+The only failing number is brightness, by 7.4 points.
+
+**R1. The measure covers the wrong area**
+
+`ImageQualityChecker.check` ([`data/image/image_quality_checker.dart`](../../lib/src/data/image/image_quality_checker.dart))
+crops the **bottom 42%** of the photo for an ID card (32% for a passport),
+resizes it to 1000 px wide and takes the mean grey value. That strip is not the
+card: in the payload the card fills 69% of the photo, so the strip includes
+the surface under the card. A dark table lowers the brightness; a white one
+raises it and could hide a dark card. The same strip is used for sharpness and
+glare.
+
+**R2. The limits are guesses**
+
+`ImageQuality` ([`domain/image_quality.dart`](../../lib/src/domain/image_quality.dart))
+says in its own comment that its limits are "tuned from one bad on-device photo
+(sharpness 45.9, brightness 96.1), so provisional":
+
+| Limit | Value |
+|---|---|
+| `minSharpness` | 60 |
+| `minBrightness` | 110 |
+| `maxGlareShare` | 0.20 |
+
+That one bad photo was bad because it was **blurry** (sharpness 45.9), not
+because of its brightness. So the brightness limit of 110 was never shown to
+separate good photos from bad ones.
+
+**Why it matters**
+
+A readable photo is called "not clear" and the user is told to retake it. With
+a missing MRZ it is `failed`. The user retakes a good photo and gets the same
+answer.
+
+**Recommended fix**
+
+1. **Measure the card, not the strip.** The card outline is already found
+   (`DocumentFrameChecker`, `diagnostics.framing.measure.outline`). Crop the
+   MRZ band **inside that outline** and measure that. When no outline is found,
+   fall back to the bottom strip as today.
+2. **Set the limits from data,** not from one photo. Use the photos below.
+3. **Keep the priorities** in [VALIDATION_RULES.md](VALIDATION_RULES.md): a
+   far or cut card first, then an unclear photo, then missing content.
+
+**How to test it (to be done on a phone)**
+
+Take each photo below with the real camera flow, on both sides of an ID card.
+For each, write down the `diagnostics.imageQuality` block (sharpness,
+brightness, glareShare, documentCoverage), the `issue`, and whether *you* would
+call the photo readable.
+
+| # | Photo | Expect |
+|---|---|---|
+| 1 | Good light, card on a **light** table | no issue |
+| 2 | Good light, card on a **dark** table | no issue (this is the R1 case) |
+| 3 | Dim room, card held in the hand, text still readable | no issue, or a clear low-light result |
+| 4 | Real low light, text hard to read | `imageNotClear` |
+| 5 | Out of focus | `imageNotClear` |
+| 6 | Light reflecting on the card | `imageNotClear` only if the MRZ is covered |
+| 7 | The front photographed twice | `contentNotFound` on the back, with a clear photo |
+| 8 | The same card on the same dark table as your failing photo | no issue after the fix |
+
+Send me the numbers for each photo. With 3 to 5 good and 3 to 5 bad photos per
+group I can pick limits that separate them, and add the photos' numbers to
+the tests.
+
+**Expected behaviour after the fix**
+
+- A sharp, readable card on a dark or a light table is not `imageNotClear`.
+- Photos 4 and 5 are still `imageNotClear`.
+- The limits in `ImageQuality` are chosen from the table of photos, and the
+  comment lists them.
+- `test/image_quality_test.dart` has the measured numbers of the real photos.
+
+**What to change in the app after the fix**
+
+- Nothing, if it only reads `issue`. It will see fewer false `imageNotClear`
+  results.
 
 ---
 

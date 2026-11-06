@@ -1,3 +1,26 @@
+## Unreleased
+
+- A Sudan ID whose MRZ names another country (issuing country and nationality
+  both not `SDN`) is now `wrongDocument`.
+- Dates that contradict each other are now marked in `fieldsToCheck` for ID
+  cards and passports: a birth date in the future, or on or after the issue or
+  expiry date. An expired document is not flagged.
+
+- New `ScanIssue.contentNotFound`: a page is in the frame and the photo is
+  clear, but what it must hold was not found: the MRZ on a back or passport
+  page, the required fields on an ID front or a certificate. It covers the front
+  or the back photographed twice. Before, a missing MRZ and a certificate with
+  nothing read were reported as `imageNotClear`, which wrongly blamed the photo,
+  and a back photographed twice was only `needsReview` with no page to retake. A
+  dark, blurry or glary photo still gives `imageNotClear`. An app with an
+  exhaustive `switch` on `ScanIssue` must handle the new value.
+- One rule now picks the issue for every document. The "fewer than 2 printed
+  fields read" shortcut is removed: whether the card is in the frame is decided
+  by its measured distance and edges alone.
+- `documentNotInFrame` is now `needsReview` when everything identifying was
+  still read (for example a valid MRZ on a card cut at an edge). It stays
+  `failed` when nothing was read.
+
 ## 0.2.0
 
 **Breaking release.** `process...` now take a `DocumentPhoto`, and a result says

@@ -14,7 +14,12 @@ class ScanNotice {
   /// of retaking them.
   final bool readAgain;
 
-  factory ScanNotice.forIssue(ScanIssue issue) => switch (issue) {
+  /// The notice for [issue]. [sides] are the pages to retake: they say which
+  /// content was not found for [ScanIssue.contentNotFound].
+  factory ScanNotice.forIssue(
+    ScanIssue issue, {
+    List<DocumentSide> sides = const [],
+  }) => switch (issue) {
     ScanIssue.wrongDocument => const ScanNotice(
       'Wrong document',
       'This is not the document you chose to scan. '
@@ -30,6 +35,15 @@ class ScanNotice {
       'The image is not clear. Use good light, avoid glare, hold steady and '
           'retake.',
     ),
+    ScanIssue.contentNotFound =>
+      sides.contains(DocumentSide.back) || sides.contains(DocumentSide.dataPage)
+          ? _mrzNotFound
+          : const ScanNotice(
+              'Details not found',
+              'The details of this page could not be found. Make sure it is '
+                  'the right side of the document, fully inside the box, and '
+                  'retake.',
+            ),
     ScanIssue.processingFailed => const ScanNotice(
       'Scan failed',
       'The document could not be processed. Retake the photos and try again.',
@@ -71,17 +85,14 @@ class ScanNotice {
     DocumentSide? shownSide,
   }) {
     final issue = outcome.issue;
-    final hasMrz = outcome.documentKind.hasMrz;
-    if (hasMrz &&
-        outcome.mrz == null &&
-        (issue == null || issue == ScanIssue.imageNotClear)) {
-      return _mrzNotFound;
-    }
     final otherSide = outcome.issueSides.any((side) => side != shownSide);
     if (issue != null && (issue != alreadyShown || otherSide)) {
-      return ScanNotice.forIssue(issue);
+      return ScanNotice.forIssue(issue, sides: outcome.issueSides);
     }
-    if (hasMrz && outcome.mrz != null && !outcome.mrz!.isValid) {
+    // The MRZ was read but a check digit failed: the fields it covers are in
+    // `fieldsToCheck`, which is what the flow's "retake" is for.
+    final mrz = outcome.mrz;
+    if (mrz != null && !mrz.isValid) {
       return _mrzNotVerified;
     }
     return null;

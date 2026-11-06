@@ -184,19 +184,7 @@ void main() {
     });
   });
 
-  group('issueFor', () {
-    test('an unreadable document always gets an issue', () {
-      expect(
-        ScanReview.issueFor(null, readable: false),
-        ScanIssue.imageNotClear,
-      );
-      expect(
-        ScanReview.issueFor(ScanIssue.documentNotInFrame, readable: false),
-        ScanIssue.documentNotInFrame,
-      );
-      expect(ScanReview.issueFor(null, readable: true), isNull);
-    });
-
+  group('worse', () {
     test('the more serious photo issue wins', () {
       expect(
         ScanReview.worse(ScanIssue.imageNotClear, ScanIssue.documentNotInFrame),
@@ -236,10 +224,19 @@ void main() {
       expect(status(ScanIssue.imageNotClear), ScanStatus.needsReview);
     });
 
-    test('every other issue fails', () {
+    test('a fully read document that is not fully in frame needs review', () {
+      expect(status(ScanIssue.documentNotInFrame), ScanStatus.needsReview);
+    });
+
+    test('an unreadable document fails whatever the issue', () {
+      for (final issue in ScanIssue.values) {
+        expect(status(issue, readable: false), ScanStatus.failed);
+      }
+    });
+
+    test('a wrong document or a system failure fails', () {
       for (final issue in [
         ScanIssue.wrongDocument,
-        ScanIssue.documentNotInFrame,
         ScanIssue.processingFailed,
         ScanIssue.readerUnavailable,
         ScanIssue.timedOut,
@@ -307,6 +304,27 @@ void main() {
         [DocumentSide.page],
       );
     });
+
+    test(
+      'contentNotFound blames the read page and is more serious than unclear',
+      () {
+        expect(ScanReview.issueSides(ScanIssue.contentNotFound, kind: id), [
+          back,
+        ]);
+        expect(
+          ScanReview.worse(ScanIssue.imageNotClear, ScanIssue.contentNotFound),
+          ScanIssue.contentNotFound,
+        );
+        expect(
+          ScanReview.statusFor(
+            issue: ScanIssue.contentNotFound,
+            readable: false,
+            fieldsToCheck: const [],
+          ),
+          ScanStatus.failed,
+        );
+      },
+    );
 
     test('a wrong document means every page', () {
       expect(

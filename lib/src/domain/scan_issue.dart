@@ -5,7 +5,8 @@
 /// `ScanOutcome.fieldsToCheck` instead.
 enum ScanIssue {
   /// An MRZ was read, but it belongs to another kind of document than the one
-  /// being scanned (a passport shown for an ID card, or the reverse).
+  /// being scanned (a passport shown for an ID card, or the reverse), or a Sudan
+  /// ID that is not Sudanese.
   wrongDocument,
 
   /// The document is not fully inside the frame: missing, too far away, or
@@ -13,9 +14,15 @@ enum ScanIssue {
   documentNotInFrame,
 
   /// The photo is not clear enough to read reliably: too dark, blurry or with
-  /// glare. Also given when the document is in the frame but its MRZ could
-  /// not be read.
+  /// glare.
   imageNotClear,
+
+  /// The page is in the frame and the photo is clear, but what that page must
+  /// hold was not found: the MRZ on a back or passport page, the required
+  /// fields on an ID front or a certificate. Often the wrong side was
+  /// photographed (the front twice, or the back twice), or the MRZ band is
+  /// outside the frame.
+  contentNotFound,
 
   /// Reading the images failed unexpectedly. The images are still returned.
   processingFailed,
@@ -35,20 +42,18 @@ enum ScanIssue {
 class ScanIssueResolver {
   ScanIssueResolver._();
 
-  /// With fewer recognised fields than this (and no MRZ) nothing readable was
-  /// in the frame.
-  static const minFieldsInFrame = 2;
-
   /// [wrongDocument] is true when the MRZ belongs to another document,
-  /// [mrzMissing] when a document that has an MRZ showed none,
-  /// [recognizedFields] how many printed fields were read, [imageIssue] the
-  /// photo-quality code (which can itself be [ScanIssue.documentNotInFrame]
-  /// when the document is small in the frame) and [cutOff] whether the
-  /// document runs past an edge of the photo (see `DocumentFraming`).
+  /// [contentMissing] when the page lacks what it must hold (see
+  /// [ScanIssue.contentNotFound]), [imageIssue] the photo-quality code (which
+  /// can itself be [ScanIssue.documentNotInFrame] when the document is small
+  /// in the frame) and [cutOff] whether the document runs past an edge of the
+  /// photo (see `DocumentFraming`).
+  ///
+  /// First match wins: a wrong document, then a document out of the frame,
+  /// then an unclear photo (the first thing to retake), then missing content.
   static ScanIssue? resolve({
     bool wrongDocument = false,
-    bool mrzMissing = false,
-    required int recognizedFields,
+    bool contentMissing = false,
     ScanIssue? imageIssue,
     bool cutOff = false,
   }) {
@@ -58,10 +63,6 @@ class ScanIssueResolver {
     if (imageIssue == ScanIssue.documentNotInFrame || cutOff) {
       return ScanIssue.documentNotInFrame;
     }
-    if (mrzMissing && recognizedFields < minFieldsInFrame) {
-      return ScanIssue.documentNotInFrame;
-    }
-    if (mrzMissing) return ScanIssue.imageNotClear;
-    return imageIssue;
+    return imageIssue ?? (contentMissing ? ScanIssue.contentNotFound : null);
   }
 }
