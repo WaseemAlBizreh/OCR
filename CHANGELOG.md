@@ -1,4 +1,4 @@
-## Unreleased
+## 0.3.0
 
 - A Sudan ID whose MRZ names another country (issuing country and nationality
   both not `SDN`) is now `wrongDocument`.
