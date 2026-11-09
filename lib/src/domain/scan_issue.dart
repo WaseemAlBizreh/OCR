@@ -17,11 +17,12 @@ enum ScanIssue {
   /// glare.
   imageNotClear,
 
-  /// The page is in the frame and the photo is clear, but what that page must
-  /// hold was not found: the MRZ on a back or passport page, the required
-  /// fields on an ID front or a certificate. Often the wrong side was
-  /// photographed (the front twice, or the back twice), or the MRZ band is
-  /// outside the frame.
+  /// The page is in the frame, but what that page must hold was not found:
+  /// the MRZ on a back or passport page, the required fields on an ID front or
+  /// a certificate. Often the wrong side was photographed (the front twice, or
+  /// the back twice), or the MRZ band is outside the frame. On a back or
+  /// passport page it is reported even when the photo is also unclear; on an
+  /// ID front or a certificate the photo is clear.
   contentNotFound,
 
   /// Reading the images failed unexpectedly. The images are still returned.
@@ -47,22 +48,30 @@ class ScanIssueResolver {
   /// [ScanIssue.contentNotFound]), [imageIssue] the photo-quality code (which
   /// can itself be [ScanIssue.documentNotInFrame] when the document is small
   /// in the frame) and [cutOff] whether the document runs past an edge of the
-  /// photo (see `DocumentFraming`).
+  /// photo (see `DocumentFraming`). [mrzPage] is true for a page read for its
+  /// MRZ (an ID back, a passport).
   ///
-  /// First match wins: a wrong document, then a document out of the frame,
-  /// then an unclear photo (the first thing to retake), then missing content.
+  /// First match wins, and a document out of the frame always comes first,
+  /// because nothing read from a partial photo can be trusted, a wrong
+  /// document included:
+  /// - every page: not in frame, then wrong document;
+  /// - a page without an MRZ (ID front, certificate): then an unclear photo,
+  ///   then missing content;
+  /// - an [mrzPage]: then missing content (the MRZ), then an unclear photo.
   static ScanIssue? resolve({
     bool wrongDocument = false,
     bool contentMissing = false,
     ScanIssue? imageIssue,
     bool cutOff = false,
+    bool mrzPage = false,
   }) {
-    if (wrongDocument) return ScanIssue.wrongDocument;
     // A document far from the frame is also dark or blurry, but that is not
     // the real cause.
     if (imageIssue == ScanIssue.documentNotInFrame || cutOff) {
       return ScanIssue.documentNotInFrame;
     }
+    if (wrongDocument) return ScanIssue.wrongDocument;
+    if (mrzPage && contentMissing) return ScanIssue.contentNotFound;
     return imageIssue ?? (contentMissing ? ScanIssue.contentNotFound : null);
   }
 }

@@ -94,7 +94,16 @@ class DocumentFrameChecker {
       cv.THRESH_BINARY | cv.THRESH_OTSU,
     );
     final kernel = cv.getStructuringElement(cv.MORPH_RECT, (15, 15));
-    final closed = await cv.morphologyExAsync(binary, cv.MORPH_CLOSE, kernel);
+    // The border must be replicated: opencv_dart's default is a black
+    // border, so the closing's erosion would eat half the kernel (7 px) off
+    // any bright area that reaches the photo's edge. A page running off the
+    // photo then ended 7 px inside it, and no edge was ever seen as touched.
+    final closed = await cv.morphologyExAsync(
+      binary,
+      cv.MORPH_CLOSE,
+      kernel,
+      borderType: cv.BORDER_REPLICATE,
+    );
     mats.addAll([blurred, binary, kernel, closed]);
 
     final (contours, hierarchy) = await cv.findContoursAsync(

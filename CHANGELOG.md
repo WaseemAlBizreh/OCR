@@ -1,3 +1,38 @@
+## 0.4.0
+
+A document that is not fully in the frame is now always a retake, and idlens
+reads exactly what the user framed.
+
+- **`documentNotInFrame` is always `failed`**, even when an MRZ, a name and a
+  national number were read from the partial photo. 0.3.0 made it
+  `needsReview` in that case; that let a cut card or half a front through.
+- **The issue priority changed.** `documentNotInFrame` is now first on every
+  page, before `wrongDocument`: nothing read from a partial photo is trusted,
+  so the photo is always measured, even when the MRZ looks like another
+  document's. For an ID back or a passport page a missing MRZ
+  (`contentNotFound`) now comes before an unclear photo (`imageNotClear`);
+  for an ID front or a certificate `imageNotClear` still comes first. When the
+  two ID photos disagree the order is `documentNotInFrame`, `wrongDocument`,
+  `readerUnavailable`, `timedOut`, `processingFailed`, `contentNotFound`,
+  `imageNotClear`. The status rules follow: `needsReview` is now only an
+  unclear photo or a field to check.
+- **Cut-off detection fixed.** The check that measures the document's bright
+  area never saw a page touching or crossing the photo's edge: its closing
+  step eroded 7 px off every edge, so a page running off the photo ended 7 px
+  inside it. A page that is cut off, such as an A4 off the left edge, is now
+  `documentNotInFrame`. A half-photographed card (a front with a name and
+  number read but a third of the card missing) is also caught by its shape.
+  Limits are provisional: check good scans on your devices.
+- **`process...` with `DocumentPhoto.camera` reads the guide box, not the box
+  plus its strip,** for an ID card and a passport. An MRZ line half outside the
+  box is cut for the reader too, and the photo is rejected instead of being
+  rescued from the margin. The result's `images` are now the box crop (what
+  your preview showed), not the wider crop. The wider crop is only used, then
+  deleted, for the framing and clarity checks. A certificate and a file photo
+  are read as before.
+- New diagnostics: `framing.edgeGaps` (the room left between the document and
+  each edge) and `photoCrop.<side>.readArea` (`box` or `box+strip`).
+
 ## 0.3.0
 
 - A Sudan ID whose MRZ names another country (issuing country and nationality

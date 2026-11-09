@@ -40,6 +40,47 @@ void main() {
       expect(verdict.cutOff, isFalse);
     });
 
+    // Real scans, framed well by the user. A camera crop is the guide box
+    // plus 6%, so a card exactly in the box would be 0.054 from each edge;
+    // these sit past the box and must still pass.
+    test('a good ID back (about 1% past the box) is not cut off', () {
+      final verdict = DocumentFraming.fromPhoto(
+        FrameMeasure(
+          width: 400,
+          height: 253,
+          outline: [
+            (x: 23, y: 18),
+            (x: 32, y: 242),
+            (x: 373, y: 236),
+            (x: 382, y: 19),
+          ],
+        ),
+        aspectRatio: idAspect,
+      )!;
+      expect(verdict.cutOff, isFalse);
+      expect(verdict.gaps![FrameSide.bottom.index], closeTo(0.043, 0.002));
+    });
+
+    test('a good passport page (2-3% past the box, gaps 0.025) is not cut '
+        'off', () {
+      // The scan a 3.5% limit wrongly rejected.
+      final verdict = DocumentFraming.fromPhoto(
+        FrameMeasure(
+          width: 400,
+          height: 281,
+          region: region(share: 0.8488, box: [13, 7, 384, 274]),
+        ),
+        aspectRatio: 125.0 / 88.0,
+      )!;
+      expect(verdict.cutOff, isFalse);
+      expect(verdict.toJson()['edgeGaps'], {
+        'left': closeTo(0.033, 0.001),
+        'top': closeTo(0.025, 0.001),
+        'right': closeTo(0.04, 0.001),
+        'bottom': closeTo(0.025, 0.001),
+      });
+    });
+
     test('a corner at the left edge is cut off on the left', () {
       final verdict = judge(outline: box(2, 37, 359, 262))!;
       expect(verdict.method, FrameMethod.outline);
@@ -99,6 +140,71 @@ void main() {
       expect(verdict.method, FrameMethod.region);
       expect(verdict.cutOff, isFalse);
     });
+
+    test('the reported half front: a region of 254x239 in a 400x253 photo, '
+        'touching no edge, is cut off', () {
+      final verdict = DocumentFraming.fromPhoto(
+        FrameMeasure(
+          width: 400,
+          height: 253,
+          region: region(share: 0.597, box: [7, 7, 261, 246]),
+        ),
+        aspectRatio: idAspect,
+      )!;
+      expect(verdict.method, FrameMethod.region);
+      expect(verdict.cutOff, isTrue);
+    });
+
+    test('the second reported half front: 303x239 (ratio 1.27) filling its '
+        'box is cut off, though 1.27 is near a tilted card', () {
+      final verdict = DocumentFraming.fromPhoto(
+        FrameMeasure(
+          width: 400,
+          height: 253,
+          region: region(share: 0.701, box: [7, 7, 310, 246]),
+        ),
+        aspectRatio: idAspect,
+      )!;
+      expect(verdict.cutOff, isTrue);
+    });
+
+    test('the good back of the same scan is not cut off', () {
+      final verdict = DocumentFraming.fromPhoto(
+        FrameMeasure(
+          width: 400,
+          height: 253,
+          region: region(share: 0.7467, box: [24, 20, 382, 241]),
+        ),
+        aspectRatio: idAspect,
+      )!;
+      expect(verdict.cutOff, isFalse);
+    });
+
+    test('a box too wide for the card (cut at top or bottom) is cut off', () {
+      final verdict = judge(
+        region: region(share: 0.5, box: [20, 100, 380, 200]),
+      )!;
+      expect(verdict.cutOff, isTrue);
+      expect(verdict.cutSides, hasLength(1));
+    });
+
+    test('a card tilted by 15 degrees is not cut off', () {
+      // Bounding box of a 1.585 card turned 15 degrees: about 1.35.
+      final verdict = judge(
+        region: region(share: 0.31, box: [60, 40, 340, 247]),
+      )!;
+      expect(verdict.cutOff, isFalse);
+    });
+
+    test(
+      'a card turned a quarter (box 120x190, ratio 0.63) is not cut off',
+      () {
+        final verdict = judge(
+          region: region(share: 0.19, box: [140, 55, 260, 245]),
+        )!;
+        expect(verdict.cutOff, isFalse);
+      },
+    );
 
     test('a card moved left, lying along the left edge, is cut off', () {
       final verdict = judge(

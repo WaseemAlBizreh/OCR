@@ -7,9 +7,9 @@ enum ScanStatus {
   verified,
 
   /// Everything identifying was read, but the photo is not clear
-  /// (`ScanIssue.imageNotClear`), the document is not fully in the frame
-  /// (`ScanIssue.documentNotInFrame`), or at least one field is in
-  /// `fieldsToCheck`.
+  /// (`ScanIssue.imageNotClear`), or at least one field is in
+  /// `fieldsToCheck`. A document that is not fully in the frame is never
+  /// this: it is `failed`.
   needsReview,
 
   /// The document could not be read: it is the wrong document, nothing

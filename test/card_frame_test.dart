@@ -115,4 +115,28 @@ void main() {
     expect(a, b);
     expect(a.hashCode, b.hashCode);
   });
+
+  group('boxInCrop', () {
+    test('a crop 6% wider puts the box 0.054 inside every edge', () {
+      final frame = CardFrame.centered(
+        previewSize: const Size(390, 520),
+        aspectRatio: DocumentKind.passport.aspectRatio,
+      );
+      final inset = frame.boxInCrop;
+      for (final v in [inset.left, inset.top, inset.right, inset.bottom]) {
+        expect(v, closeTo(0.06 / 1.12, 1e-9));
+      }
+    });
+
+    test(
+      'a strip cut short at the preview edge moves the box closer to it',
+      () {
+        // The frame touches the preview's left edge, so no strip fits there.
+        const frame = CardFrame(left: 0, top: 0.2, right: 0.8, bottom: 0.6);
+        final inset = frame.boxInCrop;
+        expect(inset.left, 0);
+        expect(inset.right, greaterThan(0));
+      },
+    );
+  });
 }

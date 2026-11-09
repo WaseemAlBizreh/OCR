@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:idlens/src/domain/box_inset.dart';
 
 /// Where the capture frame sits inside the camera preview, as fractions of the
 /// preview box. The same numbers drive the painted border and the crop of the
@@ -61,6 +62,21 @@ class CardFrame {
       top: unit(top - dy),
       right: unit(right + dx),
       bottom: unit(bottom + dy),
+    );
+  }
+
+  /// Where this frame sits inside the crop `expanded(captureMargin)` makes
+  /// from it, as fractions of that crop. A strip cut short at the preview's
+  /// edge (see [marginClipped]) moves the box closer to that edge.
+  BoxInset get boxInCrop {
+    final crop = expanded(captureMargin);
+    final w = crop.right - crop.left;
+    final h = crop.bottom - crop.top;
+    return BoxInset(
+      left: (left - crop.left) / w,
+      top: (top - crop.top) / h,
+      right: (crop.right - right) / w,
+      bottom: (crop.bottom - bottom) / h,
     );
   }
 

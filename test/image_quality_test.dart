@@ -115,6 +115,41 @@ void main() {
       );
     });
 
+    test('a document out of the frame beats a wrong document', () {
+      expect(
+        ScanIssueResolver.resolve(wrongDocument: true, cutOff: true),
+        ScanIssue.documentNotInFrame,
+      );
+      expect(
+        ScanIssueResolver.resolve(
+          wrongDocument: true,
+          imageIssue: ScanIssue.documentNotInFrame,
+        ),
+        ScanIssue.documentNotInFrame,
+      );
+    });
+
+    test('an MRZ page reports the missing MRZ before an unclear photo', () {
+      expect(
+        ScanIssueResolver.resolve(
+          mrzPage: true,
+          contentMissing: true,
+          imageIssue: ScanIssue.imageNotClear,
+        ),
+        ScanIssue.contentNotFound,
+      );
+    });
+
+    test('an MRZ page with its MRZ read still reports an unclear photo', () {
+      expect(
+        ScanIssueResolver.resolve(
+          mrzPage: true,
+          imageIssue: ScanIssue.imageNotClear,
+        ),
+        ScanIssue.imageNotClear,
+      );
+    });
+
     test('an unread MRZ on a clear, framed photo is contentNotFound', () {
       expect(
         ScanIssueResolver.resolve(contentMissing: true),

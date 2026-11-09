@@ -191,8 +191,8 @@ void main() {
         ScanIssue.documentNotInFrame,
       );
       expect(
-        ScanReview.worse(ScanIssue.documentNotInFrame, ScanIssue.wrongDocument),
-        ScanIssue.wrongDocument,
+        ScanReview.worse(ScanIssue.wrongDocument, ScanIssue.documentNotInFrame),
+        ScanIssue.documentNotInFrame,
       );
       expect(
         ScanReview.worse(ScanIssue.imageNotClear, null),
@@ -224,8 +224,8 @@ void main() {
       expect(status(ScanIssue.imageNotClear), ScanStatus.needsReview);
     });
 
-    test('a fully read document that is not fully in frame needs review', () {
-      expect(status(ScanIssue.documentNotInFrame), ScanStatus.needsReview);
+    test('a document not fully in frame fails even when fully read', () {
+      expect(status(ScanIssue.documentNotInFrame), ScanStatus.failed);
     });
 
     test('an unreadable document fails whatever the issue', () {

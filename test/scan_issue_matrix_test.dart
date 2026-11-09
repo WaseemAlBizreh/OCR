@@ -78,8 +78,9 @@ void main() {
       contentMissing: kind.hasMrz
           ? !mrzFound
           : !ScanReview.hasRequiredContent(kind, fields),
-      imageIssue: wrongDocument ? null : page.problem,
+      imageIssue: page.problem,
       cutOff: cutOff,
+      mrzPage: kind.hasMrz,
     );
     final mrzData = mrzFound ? mrz() : null;
     final readable = ScanReview.isReadable(
@@ -135,19 +136,71 @@ void main() {
       },
     );
 
-    test('back has no MRZ and is dark: imageNotClear', () {
+    test('back has no MRZ and is dark: the missing MRZ comes first', () {
       final r = scan(front: good, page: dark);
-      expect(r.issue, ScanIssue.imageNotClear);
+      expect(r.issue, ScanIssue.contentNotFound);
       expect(r.sides, [back]);
       expect(r.status, ScanStatus.failed);
     });
 
-    test('back has no MRZ and is blurry: imageNotClear', () {
-      expect(scan(front: good, page: blurry).issue, ScanIssue.imageNotClear);
+    test('back has no MRZ and is blurry: contentNotFound', () {
+      expect(scan(front: good, page: blurry).issue, ScanIssue.contentNotFound);
     });
 
-    test('back has no MRZ and has glare: imageNotClear', () {
-      expect(scan(front: good, page: glary).issue, ScanIssue.imageNotClear);
+    test('back has no MRZ and has glare: contentNotFound', () {
+      expect(scan(front: good, page: glary).issue, ScanIssue.contentNotFound);
+    });
+
+    test('MRZ read but the back is dark: imageNotClear, needsReview', () {
+      final r = scan(front: good, page: dark, mrzFound: true);
+      expect(r.issue, ScanIssue.imageNotClear);
+      expect(r.sides, [back]);
+      expect(r.status, ScanStatus.needsReview);
+    });
+
+    test('a passport MRZ on a card that is far away: documentNotInFrame '
+        'beats wrongDocument', () {
+      final r = scan(
+        front: good,
+        page: far,
+        mrzFound: true,
+        wrongDocument: true,
+      );
+      expect(r.issue, ScanIssue.documentNotInFrame);
+      expect(r.sides, [back]);
+      expect(r.status, ScanStatus.failed);
+    });
+
+    test('a passport MRZ on a card cut at an edge: documentNotInFrame', () {
+      final r = scan(
+        front: good,
+        page: good,
+        mrzFound: true,
+        wrongDocument: true,
+        cutOff: true,
+      );
+      expect(r.issue, ScanIssue.documentNotInFrame);
+      expect(r.status, ScanStatus.failed);
+    });
+
+    test('front far away, back is the wrong document: documentNotInFrame '
+        'and both pages are retaken', () {
+      final r = scan(
+        front: far,
+        page: good,
+        mrzFound: true,
+        wrongDocument: true,
+      );
+      expect(r.issue, ScanIssue.documentNotInFrame);
+      expect(r.sides, [front, back]);
+      expect(r.status, ScanStatus.failed);
+    });
+
+    test('front is only half in the frame but name and number were read: '
+        'failed, not needsReview', () {
+      final r = scan(front: far, page: good, mrzFound: true);
+      expect(r.issue, ScanIssue.documentNotInFrame);
+      expect(r.status, ScanStatus.failed);
     });
 
     test('back has no MRZ and the card is far away: documentNotInFrame', () {
@@ -184,11 +237,11 @@ void main() {
     });
 
     test('MRZ read but the front is far away: documentNotInFrame on the '
-        'front, needsReview', () {
+        'front, failed', () {
       final r = scan(front: far, page: good, mrzFound: true);
       expect(r.issue, ScanIssue.documentNotInFrame);
       expect(r.sides, [front]);
-      expect(r.status, ScanStatus.needsReview);
+      expect(r.status, ScanStatus.failed);
     });
 
     test('back scanned twice (front holds no name or number, MRZ read): '
@@ -216,10 +269,11 @@ void main() {
       expect(r.sides, [front]);
     });
 
-    test('MRZ read, card slightly cut off: needsReview, not failed', () {
+    test('MRZ read, card slightly cut off: failed, retake', () {
       final r = scan(front: good, page: good, mrzFound: true, cutOff: true);
       expect(r.issue, ScanIssue.documentNotInFrame);
-      expect(r.status, ScanStatus.needsReview);
+      expect(r.sides, [back]);
+      expect(r.status, ScanStatus.failed);
     });
 
     test('front dark and back has no MRZ: contentNotFound, retake both', () {
@@ -263,10 +317,32 @@ void main() {
       expect(r.status, ScanStatus.failed);
     });
 
-    test('no MRZ and dark: imageNotClear', () {
+    test('no MRZ and dark: the missing MRZ comes first', () {
       final r = scan(kind: DocumentKind.passport, page: dark);
-      expect(r.issue, ScanIssue.imageNotClear);
+      expect(r.issue, ScanIssue.contentNotFound);
       expect(r.sides, [page]);
+    });
+
+    test('MRZ read but the page is dark: imageNotClear, needsReview', () {
+      final r = scan(
+        kind: DocumentKind.passport,
+        page: dark,
+        mrzFound: true,
+        fields: nothingRead,
+      );
+      expect(r.issue, ScanIssue.imageNotClear);
+      expect(r.status, ScanStatus.needsReview);
+    });
+
+    test('far away with a passport MRZ of the wrong kind: '
+        'documentNotInFrame first', () {
+      final r = scan(
+        kind: DocumentKind.passport,
+        page: far,
+        mrzFound: true,
+        wrongDocument: true,
+      );
+      expect(r.issue, ScanIssue.documentNotInFrame);
     });
 
     test('no MRZ and far away: documentNotInFrame, failed', () {
@@ -309,10 +385,10 @@ void main() {
       expect(r.status, ScanStatus.failed);
     });
 
-    test('far away but fields read: documentNotInFrame, needsReview', () {
+    test('far away but fields read: documentNotInFrame, failed', () {
       final r = scan(kind: kind, page: far, fields: read);
       expect(r.issue, ScanIssue.documentNotInFrame);
-      expect(r.status, ScanStatus.needsReview);
+      expect(r.status, ScanStatus.failed);
     });
 
     test('dark but fields read: imageNotClear, needsReview', () {
@@ -348,11 +424,11 @@ void main() {
   group('Which issue wins when the two ID card sides disagree', () {
     // Most serious first.
     const order = [
+      ScanIssue.documentNotInFrame,
       ScanIssue.wrongDocument,
       ScanIssue.readerUnavailable,
       ScanIssue.timedOut,
       ScanIssue.processingFailed,
-      ScanIssue.documentNotInFrame,
       ScanIssue.contentNotFound,
       ScanIssue.imageNotClear,
     ];
@@ -374,11 +450,11 @@ void main() {
   group('The reported payload', () {
     // Back photo: sharpness 221, brightness 102.6, glare 0.0004, coverage 0.69,
     // no MRZ. The brightness is under the 110 limit, so the photo itself is
-    // flagged and imageNotClear is correct for it.
+    // flagged, but with no MRZ read the missing MRZ is reported first.
     test('brightness 102.6 is flagged as not clear', () {
       final back = photo(sharpness: 221, brightness: 102.6, coverage: 0.69);
       expect(back.problem, ScanIssue.imageNotClear);
-      expect(scan(front: good, page: back).issue, ScanIssue.imageNotClear);
+      expect(scan(front: good, page: back).issue, ScanIssue.contentNotFound);
     });
 
     test('the same photo at brightness 120 would be contentNotFound', () {

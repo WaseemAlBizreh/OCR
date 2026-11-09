@@ -176,8 +176,9 @@ for every document.
 An ID card has two photos, so the front's and the back's checks are kept apart:
 `issueSides` can name only the side that caused the issue, and the user doesn't
 retake a good photo. When both photos have problems, the more serious issue is
-reported, in this order: `wrongDocument`, `readerUnavailable`, `timedOut`,
-`processingFailed`, `documentNotInFrame`, `contentNotFound`, `imageNotClear`.
+reported, in this order: `documentNotInFrame`, `wrongDocument`,
+`readerUnavailable`, `timedOut`, `processingFailed`, `contentNotFound`,
+`imageNotClear`.
 
 ### 7. The result
 

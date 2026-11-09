@@ -7,7 +7,7 @@ this file when a rule or a limit changes. The tests that pin the outcomes are in
 ## The order of the checks
 
 ```
-photo checks ──► MRZ read ──► wrong document? ──► merge ──► ScanReview
+photo checks ──► MRZ read ──► resolve (framing first) ──► merge ──► ScanReview
 (per page)                                                   issue · issueSides
                                                              fieldsToCheck · status
 ```
@@ -31,14 +31,43 @@ Files: [`image_quality.dart`](../../lib/src/domain/image_quality.dart),
 | Glare: share of white pixels | above `0.20` | `imageNotClear` |
 | Cut-off: a corner or the bright area within `1.5%` of an edge | any one edge | `documentNotInFrame` |
 
+- **The cut-off limit is measured against the photo's edge, not the guide
+  box, and no edge limit can do better.** The camera crop is the box plus a 6%
+  strip, so a card exactly in the box lies 5.4% inside each edge. Real users
+  fit it loosely: a good ID back was about 1% past the box (bottom gap 0.043),
+  a good passport page 2-3% past it (gaps 0.025 to 0.040). A limit of `3.5%`
+  (tried 2026-11-09 to catch a card held low, so that its last MRZ line was
+  half outside the box) rejected that passport, so it went back to `1.5%`. A
+  card held low enough to cut its MRZ lies in the same 2-4% range, so telling
+  them apart needs the MRZ lines' own positions (open item 8).
+  `framing.edgeGaps` in the diagnostics shows the room left on each edge.
+- **The bright-area check was blind to edges until 2026-11-09.** The closing
+  step used opencv_dart's default black border, which eroded 7 px (half the
+  15x15 kernel) off any area reaching the photo's edge, so the area always
+  ended at least 7 px inside it (every real payload showed `7` on the touched
+  sides: `[7,7,310,246]`, `left: 7`). That is more than the `1.5%` limit, so a
+  page running off the photo was never cut off by this check. Fixed with
+  `borderType: BORDER_REPLICATE`. Not run on a phone: the same scans should now
+  show `0` on a side they touch.
 - **Distance wins over clarity.** A far card is also dark and blurry, but that is
-  not the real cause, so `documentNotInFrame` comes first.
+  not the real cause, so `documentNotInFrame` comes first. It also wins over
+  everything else (see section 3).
 - **Cut-off checks, strongest first:** the document outline (4 corners; trusted
   above `0.3` of the photo, measures distance down to `0.15`), then the bright
   area against the background (between `0.15` and `0.92` of the photo, touching
   an edge for at least `0.5` of its own side), then printed text running to an
   edge. A hand holding the card touches an edge over a much shorter stretch and
   doesn't count.
+- **The bright area must also have the card's shape.** Touching no edge is not
+  enough: half a card (the rest dark or outside the crop) has a box far from
+  the card's width/height ratio (a quarter turn is accepted). Two limits: an
+  area filling at least `90%` of its own box is an upright rectangle and must
+  match within `10%`; one filling less (a tilted card fills about 64% at 15
+  degrees) gets `25%`. Found on real payloads, both `verified` before: a half
+  front of 254x239 (ratio 1.06) and one of 303x239 (ratio 1.27, which the first
+  25% limit let through); a Sudan ID is 1.59, and the good back in the same
+  scan was 1.62. The limits are provisional; a hand holding the card can widen
+  the box.
 - The sharpness, brightness and glare limits are **provisional**, tuned on few
   photos. A real back photo with brightness 102.6 and sharpness 221 was flagged
   `imageNotClear`; check new device payloads against them.
@@ -57,6 +86,7 @@ Files: [`mrz_reader.dart`](../../lib/src/data/mrz/mrz_reader.dart),
 | Look-alike repair | by the expected character type per position: `O`/`0`, `I`/`1`, `S`/`5`, `B`/`8` |
 | Check digits (ICAO 9303) | document number, date of birth, expiry date, composite; plus personal number on a passport |
 | Best read kept | even if some digits fail, so `mrz.checks` shows the near miss |
+| What is read | `process...` with `DocumentPhoto.camera` (ID card, passport): the photo is cropped to the guide box plus a 6% strip, then the **box** is cut out of that, and the box is what is read and returned (`images`), exactly what the app's preview showed. An MRZ line half outside the box is therefore cut for the reader too and does not read, instead of being rescued from the strip. The wider crop is kept only for the framing and clarity checks (they need the background) and is deleted after the read. A certificate reads the wider crop, because flattening its page needs the strip. A file photo is read as it is. `diagnostics.photoCrop.<side>.readArea` says `box` or `box+strip`. |
 | Cut MRZ | a line missing its first or last characters sets `mrz.cutOff` and gives `documentNotInFrame` (a name has no check digit, so a cut name would pass unseen) |
 
 `MrzValidator` only judges the format. Wrong values inside the MRZ are judged
@@ -64,22 +94,35 @@ later, as `fieldsToCheck`.
 
 ## 3. Choosing the issue (`ScanIssueResolver.resolve`)
 
-File: [`scan_issue.dart`](../../lib/src/domain/scan_issue.dart). One rule for
-every page of every document. First match wins:
+File: [`scan_issue.dart`](../../lib/src/domain/scan_issue.dart). First match wins.
+`documentNotInFrame` is first on every page, a wrong document included: nothing
+read from a partial photo can be trusted, so the photo is always measured, even
+when the MRZ looks like another document's.
+
+Page without an MRZ (ID front, certificate):
 
 | # | Condition | Issue |
 |---|---|---|
-| 1 | the MRZ is of another document | `wrongDocument` |
-| 2 | the photo check says `documentNotInFrame`, or the document or MRZ is cut off | `documentNotInFrame` |
+| 1 | the photo check says `documentNotInFrame`, or the document is cut off | `documentNotInFrame` |
+| 2 | the MRZ is of another document | `wrongDocument` |
 | 3 | the photo is dark, blurry or glary | `imageNotClear` |
-| 4 | the page lacks what it must hold | **`contentNotFound`** |
+| 4 | the page lacks a required field | `contentNotFound` |
 | 5 | otherwise | none |
 
-"What it must hold": the MRZ on a back or passport page; a required field (name
-or national number) on an ID front; a required field on a certificate. An unclear
-photo (3) comes before missing content (4) because it is the first thing to
-retake. Row 4 is the case of a page that was photographed twice (the front twice
-or the back twice).
+Page read for its MRZ (ID back, passport): the MRZ comes before the photo
+quality.
+
+| # | Condition | Issue |
+|---|---|---|
+| 1 | not in frame, or the document or MRZ is cut off | `documentNotInFrame` |
+| 2 | the MRZ is of another document | `wrongDocument` |
+| 3 | no MRZ was read | `contentNotFound` |
+| 4 | the photo is dark, blurry or glary (MRZ read) | `imageNotClear` |
+| 5 | otherwise | none |
+
+On an MRZ page a blurry photo with no MRZ read reports `contentNotFound`, not
+`imageNotClear`: the quality limits are provisional, and a false "blurry" must
+not hide a wrong side. Revisit once the limits are tuned on device payloads.
 
 ## 4. Combining the pages (`ScanReview`)
 
@@ -87,8 +130,8 @@ File: [`scan_review.dart`](../../lib/src/api/scan_review.dart).
 
 **Which issue wins** when the two ID card photos differ, most serious first:
 
-`wrongDocument` > `readerUnavailable` > `timedOut` > `processingFailed` >
-`documentNotInFrame` > `contentNotFound` > `imageNotClear`
+`documentNotInFrame` > `wrongDocument` > `readerUnavailable` > `timedOut` >
+`processingFailed` > `contentNotFound` > `imageNotClear`
 
 On a tie the front is kept.
 
@@ -132,14 +175,16 @@ Other fields not read are `null`, are not listed, and don't change the status.
 
 | Status | When |
 |---|---|
-| `failed` | not readable, or `wrongDocument`, `processingFailed`, `readerUnavailable`, `timedOut` |
-| `needsReview` | readable, and an issue of `imageNotClear` or `documentNotInFrame`, or at least one field in `fieldsToCheck` |
+| `failed` | not readable, or `documentNotInFrame`, `wrongDocument`, `processingFailed`, `readerUnavailable`, `timedOut` |
+| `needsReview` | readable, and an issue of `imageNotClear`, or at least one field in `fieldsToCheck` |
 | `verified` | no issue and nothing to check |
 | `incomplete` | the user left before every page was captured (set by the flow, nothing read) |
 
-So `contentNotFound` is always `failed` (it means unreadable). `documentNotInFrame`
-is `failed` only when nothing identifying was read, for example no MRZ on a far
-card; a valid MRZ on a card cut at an edge is `needsReview`.
+So `contentNotFound` is always `failed` (it means unreadable). So is
+`documentNotInFrame`, even when a valid MRZ, a name and a national number were
+read: a card cut at an edge, or half of a front, must be retaken, and nothing
+read from it is accepted. (Before 2026-11-09 a fully read card cut at an edge
+was `needsReview`.)
 
 ## 7. Failures that aren't about the photo
 
@@ -185,7 +230,11 @@ Still open:
 6. **The country check** needs both the issuing country and the nationality to
    differ from `SDN`, so a genuine card with both misread would be rejected.
 7. **No end-to-end test** with real photos; the tests cover the decision rules.
-
-By design: a wrong **side** is not detected as such. It shows as
-`contentNotFound` on the page that lacks its content, the only claim idlens can
-make.
+8. ~~An MRZ cut at the guide box edge is accepted~~ **Fixed 2026-11-09, not
+   verified on a phone**: the box is cropped first and that is what is read
+   (section 2). Reported on an ID back whose third line was half outside the
+   box and a passport whose second line was; the reader saw both in the 6%
+   strip. An edge limit could not tell these from a loosely framed card
+   (section 1). Two things remain: such a photo now fails as `contentNotFound`
+   (no MRZ read), not `documentNotInFrame`; and the built-in camera still
+   reads its wider crop, since only `process...` knows the box.

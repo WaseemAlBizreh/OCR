@@ -8,6 +8,7 @@ import 'package:idlens/src/api/scan_outcome.dart';
 import 'package:idlens/src/api/scan_review.dart';
 import 'package:idlens/src/api/scan_status.dart';
 import 'package:idlens/src/api/scanned_image.dart';
+import 'package:idlens/src/data/image/image_ops.dart';
 import 'package:idlens/src/data/ocr/paddle/paddle_latin_hybrid_recognizer.dart';
 import 'package:idlens/src/data/ocr/paddle/paddle_ocr_engine.dart'
     show ReaderUnavailableException;
@@ -51,8 +52,23 @@ class PreparedPhotos {
   /// its `dispose()` deletes.
   final Set<DocumentSide> temporary = {};
 
+  /// Per side, the wider crop (the guide box plus its strip of background)
+  /// that the framing and clarity checks look at, while [paths] holds the box
+  /// that is read and returned. A temporary file: [discardChecks] deletes it
+  /// once the read is over.
+  final Map<DocumentSide, String> checkPaths = {};
+
   /// Per side, how the photo was cropped, for `diagnostics['photoCrop']`.
   final Map<String, dynamic> diagnostics = {};
+
+  /// Deletes the wider crops, which only the checks needed.
+  Future<void> discardChecks(ImageOps imageOps) async {
+    final paths = checkPaths.values.toList();
+    checkPaths.clear();
+    for (final path in paths) {
+      await imageOps.deleteTemp(path);
+    }
+  }
 
   /// True once the time limit passed and the result was built, so a crop
   /// finishing after that must delete its own file.
@@ -179,6 +195,7 @@ class ScanRunner {
     Map<DocumentSide, String> paths, {
     required Set<DocumentSide> temporary,
     PhotoCheck? frontCheck,
+    Map<DocumentSide, String> checkPaths = const {},
     Map<String, dynamic> extraDiagnostics = const {},
   }) async {
     final images = _images(DocumentKind.sudanId, paths, temporary);
@@ -186,7 +203,10 @@ class ScanRunner {
     try {
       final front =
           frontCheck ??
-          await checkPhoto(paths[DocumentSide.front]!, DocumentKind.sudanId);
+          await checkPhoto(
+            checkPaths[DocumentSide.front] ?? paths[DocumentSide.front]!,
+            DocumentKind.sudanId,
+          );
       ScanDeadline.check();
       final result = await _services.identityScanService.scan(
         kind: DocumentKind.sudanId,
@@ -203,8 +223,9 @@ class ScanRunner {
       final judged = await _judge(
         result,
         DocumentKind.sudanId,
-        paths[DocumentSide.back]!,
+        checkPaths[DocumentSide.back] ?? paths[DocumentSide.back]!,
         frontIssue: front.issue,
+        textEdges: checkPaths.isEmpty,
       );
       return IdCardResult(
         status: judged.status,
@@ -256,6 +277,7 @@ class ScanRunner {
   Future<PassportResult> _passport(
     String dataPagePath, {
     required Set<DocumentSide> temporary,
+    String? checkPath,
     Map<String, dynamic> extraDiagnostics = const {},
   }) async {
     final images = _images(DocumentKind.passport, {
@@ -265,7 +287,12 @@ class ScanRunner {
     try {
       final result = await _services.passportScanService.scan(dataPagePath);
       ScanDeadline.check();
-      final judged = await _judge(result, DocumentKind.passport, dataPagePath);
+      final judged = await _judge(
+        result,
+        DocumentKind.passport,
+        checkPath ?? dataPagePath,
+        textEdges: checkPath == null,
+      );
       return PassportResult(
         status: judged.status,
         issue: judged.issue,
@@ -440,40 +467,40 @@ class ScanRunner {
     DocumentKind kind,
     String mrzPagePath, {
     ScanIssue? frontIssue,
+    bool textEdges = true,
   }) async {
     final wrongDocument = _mrzValidator.isWrongDocument(result.mrz, kind);
-    ImageQuality? quality;
-    FrameVerdict? verdict;
-    Map<String, dynamic>? framing;
-    if (!wrongDocument) {
-      // Even a found MRZ can come from a dark or blurry photo whose other
-      // fields are incomplete, or a cut-off one, so the photo is always
-      // measured.
-      final frame = await _services.documentFrameChecker.measure(mrzPagePath);
-      final coverage = _coverage(frame, kind);
-      quality = await _services.imageQualityChecker.check(
-        mrzPagePath,
-        kind,
-        documentCoverage: coverage.share,
-      );
-      verdict = await _framing(
-        mrzPagePath,
-        kind,
-        frame,
-        textSides: result.frameTouchedSides,
-      );
-      framing = {
-        ..._framingJson(verdict, frame, coverage),
-        'mrzCut': result.mrz?.cutOff ?? false,
-      };
-    }
+    // Even a found MRZ can come from a dark or blurry photo whose other
+    // fields are incomplete, or a cut-off one, so the photo is always
+    // measured.
+    final frame = await _services.documentFrameChecker.measure(mrzPagePath);
+    final coverage = _coverage(frame, kind);
+    final quality = await _services.imageQualityChecker.check(
+      mrzPagePath,
+      kind,
+      documentCoverage: coverage.share,
+    );
+    final verdict = await _framing(
+      mrzPagePath,
+      kind,
+      frame,
+      // The text at the edges of the box that was read says nothing about
+      // the strip around it, so with a separate check photo it is measured
+      // there instead.
+      textSides: textEdges ? result.frameTouchedSides : null,
+    );
+    final framing = {
+      ..._framingJson(verdict, frame, coverage),
+      'mrzCut': result.mrz?.cutOff ?? false,
+    };
     final resolved = ScanIssueResolver.resolve(
       wrongDocument: wrongDocument,
       contentMissing: result.mrz == null,
+      mrzPage: true,
       imageIssue: quality?.problem,
       // A cut MRZ line is proof on its own, even when the photo checks
       // can't tell.
-      cutOff: (verdict?.cutOff ?? false) || (result.mrz?.cutOff ?? false),
+      cutOff: verdict.cutOff || (result.mrz?.cutOff ?? false),
     );
     // The front, like the back, must hold what it should: a back photographed
     // twice shows no name or national number. A photo problem comes first.
@@ -551,7 +578,7 @@ class ScanRunner {
     return ScanDeadline.run(
       timeout,
       () async {
-        final failure = await _prepare(photos, prepared);
+        final failure = await _prepare(photos, prepared, readBox: true);
         if (failure != null) {
           return IdCardResult(
             status: ScanStatus.failed,
@@ -561,11 +588,16 @@ class ScanRunner {
             scannedAt: DateTime.now(),
           );
         }
-        return _idCard(
-          prepared.paths,
-          temporary: prepared.temporary,
-          extraDiagnostics: {'photoCrop': prepared.diagnostics},
-        );
+        try {
+          return await _idCard(
+            prepared.paths,
+            temporary: prepared.temporary,
+            checkPaths: prepared.checkPaths,
+            extraDiagnostics: {'photoCrop': prepared.diagnostics},
+          );
+        } finally {
+          await prepared.discardChecks(_services.imageOps);
+        }
       },
       () {
         prepared.sealed = true;
@@ -592,7 +624,7 @@ class ScanRunner {
     return ScanDeadline.run(
       timeout,
       () async {
-        final failure = await _prepare(photos, prepared);
+        final failure = await _prepare(photos, prepared, readBox: true);
         if (failure != null) {
           return PassportResult(
             status: ScanStatus.failed,
@@ -602,11 +634,16 @@ class ScanRunner {
             scannedAt: DateTime.now(),
           );
         }
-        return _passport(
-          prepared.paths[side]!,
-          temporary: prepared.temporary,
-          extraDiagnostics: {'photoCrop': prepared.diagnostics},
-        );
+        try {
+          return await _passport(
+            prepared.paths[side]!,
+            temporary: prepared.temporary,
+            checkPath: prepared.checkPaths[side],
+            extraDiagnostics: {'photoCrop': prepared.diagnostics},
+          );
+        } finally {
+          await prepared.discardChecks(_services.imageOps);
+        }
       },
       () {
         prepared.sealed = true;
@@ -634,7 +671,7 @@ class ScanRunner {
     return ScanDeadline.run(
       timeout,
       () async {
-        final failure = await _prepare(photos, prepared);
+        final failure = await _prepare(photos, prepared, readBox: false);
         if (failure != null) {
           return CivilRegistryResult(
             status: ScanStatus.failed,
@@ -668,42 +705,75 @@ class ScanRunner {
   /// passing is not a failure of the photo and is rethrown.
   Future<String?> _prepare(
     Map<DocumentSide, DocumentPhoto> photos,
-    PreparedPhotos prepared,
-  ) async {
+    PreparedPhotos prepared, {
+    required bool readBox,
+  }) async {
     try {
-      await _cropCameraPhotos(photos, prepared);
+      await _cropCameraPhotos(photos, prepared, readBox: readBox);
       return null;
     } on ScanTimedOutException {
+      await prepared.discardChecks(_services.imageOps);
       rethrow;
     } catch (error) {
+      await prepared.discardChecks(_services.imageOps);
       return '$error';
     }
   }
 
+  /// Crops each camera photo around its guide box, a strip wider. With
+  /// [readBox] the box itself is then cut out of that crop: what is read and
+  /// returned is exactly what the user framed (and the app's preview showed),
+  /// and the wider crop only serves the framing and clarity checks, which need
+  /// the background (see [PreparedPhotos.checkPaths]). Without it (a
+  /// certificate, whose page outline needs the strip to be flattened) the
+  /// wider crop is read as it is.
   Future<void> _cropCameraPhotos(
     Map<DocumentSide, DocumentPhoto> photos,
-    PreparedPhotos prepared,
-  ) async {
+    PreparedPhotos prepared, {
+    required bool readBox,
+  }) async {
+    final imageOps = _services.imageOps;
     for (final MapEntry(key: side, value: photo) in photos.entries) {
       if (!photo.isCamera) continue;
-      final path = await cropAroundFrame(
+      final wide = await cropAroundFrame(
         photo.file.path,
         photo.frame,
         viewAspect: photo.viewAspect,
         label: 'process_${side.name}',
-        imageOps: _services.imageOps,
+        imageOps: imageOps,
       );
+      String? box;
+      if (readBox && !prepared.sealed) {
+        try {
+          final inset = photo.frame.boxInCrop;
+          box = await imageOps.crop(
+            wide,
+            left: inset.left,
+            top: inset.top,
+            right: 1 - inset.right,
+            bottom: 1 - inset.bottom,
+            label: 'process_box_${side.name}',
+          );
+        } catch (_) {
+          await imageOps.deleteTemp(wide);
+          rethrow;
+        }
+      }
       if (prepared.sealed) {
         // The time limit passed while cropping: the result was built without
-        // this file, so nothing else would delete it.
-        await _services.imageOps.deleteTemp(path);
+        // these files, so nothing else would delete them.
+        await imageOps.deleteTemp(wide);
+        if (box != null) await imageOps.deleteTemp(box);
         throw const ScanTimedOutException();
       }
-      prepared.paths[side] = path;
+      prepared.paths[side] = box ?? wide;
+      if (box != null) prepared.checkPaths[side] = wide;
       prepared.temporary.add(side);
       prepared.diagnostics[side.name] = {
         'camera': true,
         'marginClipped': photo.frame.marginClipped,
+        'readArea': box != null ? 'box' : 'box+strip',
+        if (box != null) 'box': photo.frame.boxInCrop.toJson(),
       };
       ScanDeadline.check();
     }
