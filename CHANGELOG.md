@@ -1,3 +1,36 @@
+## 0.4.1
+
+Fixes for the stricter framing in 0.4.0. Every limit is now checked against a
+set of real, labelled device scans, so a fix for one case can't quietly break
+another. There are no API changes.
+
+- **A good passport is no longer rejected as cut off.** In 0.4.0 the open
+  booklet's facing page, running past the top and bottom of the photo, was
+  taken for the data page running off the photo, so almost every passport
+  scan failed. A bright area along two opposite edges is now read as
+  something larger than the document, and the document counts as in frame.
+  The area must still be as wide as the document on the other axis, so half
+  a card running from top to bottom is still `documentNotInFrame`.
+- **A document far from the camera is now rejected.** The "too far" limit
+  goes from 0.42 to 0.60 of the photo. A document filling less than about
+  87% of the guide box is now `documentNotInFrame`. Real far scans (76–83%
+  of the box) were accepted with the old limit. Good scans filled 90% or
+  more. This is stricter than 0.4.0: check it on your devices, and send
+  scans that are rejected wrongly.
+- **An MRZ name missing one `<` is no longer a cut MRZ.** When the name fills
+  the whole line, OCR sometimes drops a `<` inside it, which leaves the line
+  one character short and not ending in `<`. That was taken for a name cut
+  at the photo's edge, so a well-framed ID back failed with
+  `documentNotInFrame`. It now counts as a misread, as long as the other MRZ
+  lines are complete. A real cut still shortens every line and is still
+  caught.
+- **The national number on an ID front is never the phone number.** When the
+  "national number" label was lost (for example on a card cut at the top),
+  the first 11-digit number on the card was taken, which could be the phone
+  on the address line plus a stray digit. That line and any number starting
+  `09` or `01` are now skipped. A number split by a space (`1197422 1992`)
+  is joined.
+
 ## 0.4.0
 
 A document that is not fully in the frame is now always a retake, and idlens

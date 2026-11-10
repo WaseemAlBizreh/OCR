@@ -47,3 +47,7 @@ app.*.map.json
 
 # Lock files: libraries do not commit them (the example app may).
 /pubspec.lock
+
+# Real device scans with personal data (names, national numbers): local only,
+# never pushed (the repository is public) or published.
+test/fixtures/

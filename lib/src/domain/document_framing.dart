@@ -1,5 +1,7 @@
 import 'dart:math' as math;
 
+import 'package:idlens/src/domain/validation_limits.dart';
+
 /// A point in photo pixels.
 typedef FramePoint = ({double x, double y});
 
@@ -185,10 +187,25 @@ class DocumentFraming {
   /// upright card fills nearly all of its box and so must match the shape
   /// closely. A half card, with its dark remainder, is such an upright box.
   static const regionAspectTolerance = 0.25;
-  static const uprightRegionTolerance = 0.10;
+
+  /// 15%: the half fronts reported on devices were 20% and 33% off; a good
+  /// card is a few percent off at most.
+  static const uprightRegionTolerance = 0.15;
 
   /// An area filling at least this share of its own box is upright.
   static const uprightFill = 0.9;
+
+  /// The guide box's share of the photo along each axis: the photo is the box
+  /// plus a 6% strip on every side (`CardFrame.captureMargin`), 1 / 1.12.
+  static const boxShare = 1 / 1.12;
+
+  /// A bright area along two opposite edges must be at least this share, on
+  /// the other axis, of a document filling the box. Real good passports
+  /// (2026-11-09/10 fixtures, facing page along top and bottom): 351 to 373 px
+  /// against 356 expected (0.98 to 1.05). A half ID front: 260 against 358
+  /// (0.73). A document the size of the box but not quite in it passes; a
+  /// quarter-turned card along both edges does not (as in 0.4.0).
+  static const minFreeExtent = 0.85;
 
   /// A bright area outside this range of shares isn't clearly the document:
   /// too small is noise, too large is a light background.
@@ -206,14 +223,16 @@ class DocumentFraming {
   static FrameVerdict? fromPhoto(
     FrameMeasure measure, {
     required double aspectRatio,
+    ValidationLimits limits = ValidationLimits.standard,
   }) {
     if (measure.width <= 0 || measure.height <= 0) return null;
     final outline = measure.outline;
     if (outline != null &&
-        _outlineShare(outline, measure, aspectRatio) >= minOutlineShare) {
+        _outlineShare(outline, measure, aspectRatio, limits) >=
+            minOutlineShare) {
       return FrameVerdict(
         FrameMethod.outline,
-        _cornersAtEdges(outline, measure),
+        _cornersAtEdges(outline, measure, limits),
         gaps: _outlineGaps(outline, measure),
       );
     }
@@ -223,13 +242,45 @@ class DocumentFraming {
         region.share > maxRegionShare) {
       return null;
     }
-    final sides = _regionAtEdges(region, measure);
+    final sides = _regionAtEdges(region, measure, limits);
     // An area along three or four edges is the background, not the document.
     if (sides.length >= 3) return null;
+    // Along two opposite edges, with room on the other two: the bright area
+    // is bigger than the document along that axis, so it is not the
+    // document's outline (an open passport's facing page, a light strip of
+    // table). It says nothing about the document, which is judged in frame.
+    // A real cut runs past one edge, or two that meet at a corner.
+    // On the other (free) axis the area is still the document's own size, so
+    // it must be as long as a document in the box would be; a half card
+    // running from top to bottom is too narrow, and is cut on the nearer side.
+    final topBottom =
+        sides.contains(FrameSide.top) && sides.contains(FrameSide.bottom);
+    final leftRight =
+        sides.contains(FrameSide.left) && sides.contains(FrameSide.right);
+    if (topBottom || leftRight) {
+      final gaps = _regionGaps(region, measure);
+      final FrameSide? short;
+      if (topBottom) {
+        final expected = measure.height * boxShare * aspectRatio;
+        short = region.right - region.left >= expected * minFreeExtent
+            ? null
+            : (region.left <= measure.width - region.right
+                  ? FrameSide.left
+                  : FrameSide.right);
+      } else {
+        final expected = measure.width * boxShare / aspectRatio;
+        short = region.bottom - region.top >= expected * minFreeExtent
+            ? null
+            : (region.top <= measure.height - region.bottom
+                  ? FrameSide.top
+                  : FrameSide.bottom);
+      }
+      return FrameVerdict(FrameMethod.region, [?short], gaps: gaps);
+    }
     if (sides.isEmpty) {
       // Touching no edge is not enough: half a card in the middle of the
       // photo (the rest dark, or out of the crop) has the wrong shape.
-      final short = _shortSide(region, measure, aspectRatio);
+      final short = _shortSide(region, measure, aspectRatio, limits);
       if (short != null) {
         return FrameVerdict(FrameMethod.region, [
           short,
@@ -260,12 +311,13 @@ class DocumentFraming {
   static FrameCoverage coverage(
     FrameMeasure measure, {
     required double aspectRatio,
+    ValidationLimits limits = ValidationLimits.standard,
   }) {
     final photo = measure.width * measure.height;
     if (photo <= 0) return FrameCoverage.unknown;
     final outline = measure.outline;
     if (outline != null) {
-      final share = _outlineShare(outline, measure, aspectRatio);
+      final share = _outlineShare(outline, measure, aspectRatio, limits);
       if (share >= minFarOutlineShare) {
         return FrameCoverage(share.clamp(0.0, 1.0), FrameMethod.outline);
       }
@@ -273,7 +325,7 @@ class DocumentFraming {
     final r = measure.region;
     if (r == null ||
         r.share > maxRegionShare ||
-        _regionAtEdges(r, measure).length >= 3) {
+        _regionAtEdges(r, measure, limits).length >= 3) {
       return FrameCoverage.unknown;
     }
     final box = (r.right - r.left) * (r.bottom - r.top) / photo;
@@ -286,6 +338,7 @@ class DocumentFraming {
     List<FramePoint> outline,
     FrameMeasure measure,
     double aspectRatio,
+    ValidationLimits limits,
   ) {
     if (outline.length != 4) return 0;
     // In order first: corners in a crossed order give a wrong area.
@@ -296,7 +349,7 @@ class DocumentFraming {
     final ratio = width / height;
     // A photo taken with the document turned a quarter is fine too.
     bool near(double expected) =>
-        (ratio - expected).abs() <= expected * aspectTolerance;
+        (ratio - expected).abs() <= expected * limits.aspectTolerance;
     if (!near(aspectRatio) && !near(1 / aspectRatio)) return 0;
     return _area(c) / (measure.width * measure.height);
   }
@@ -309,6 +362,7 @@ class DocumentFraming {
     FrameRegion region,
     FrameMeasure measure,
     double aspectRatio,
+    ValidationLimits limits,
   ) {
     final width = region.right - region.left;
     final height = region.bottom - region.top;
@@ -317,8 +371,8 @@ class DocumentFraming {
     final fill =
         region.share * measure.width * measure.height / (width * height);
     final tolerance = fill >= uprightFill
-        ? uprightRegionTolerance
-        : regionAspectTolerance;
+        ? limits.uprightRegionTolerance
+        : limits.regionAspectTolerance;
     bool near(double expected) =>
         (ratio - expected).abs() <= expected * tolerance;
     if (near(aspectRatio) || near(1 / aspectRatio)) return null;
@@ -362,9 +416,10 @@ class DocumentFraming {
   static List<FrameSide> _cornersAtEdges(
     List<FramePoint> outline,
     FrameMeasure measure,
+    ValidationLimits limits,
   ) {
-    final dx = measure.width * edgeMargin;
-    final dy = measure.height * edgeMargin;
+    final dx = measure.width * limits.edgeMargin;
+    final dy = measure.height * limits.edgeMargin;
     return [
       if (outline.any((p) => p.x <= dx)) FrameSide.left,
       if (outline.any((p) => p.y <= dy)) FrameSide.top,
@@ -376,13 +431,14 @@ class DocumentFraming {
   static List<FrameSide> _regionAtEdges(
     FrameRegion region,
     FrameMeasure measure,
+    ValidationLimits limits,
   ) {
-    final dx = measure.width * edgeMargin;
-    final dy = measure.height * edgeMargin;
+    final dx = measure.width * limits.edgeMargin;
+    final dy = measure.height * limits.edgeMargin;
     final boxWidth = region.right - region.left;
     final boxHeight = region.bottom - region.top;
     bool along(FrameSide side, double length) =>
-        region.contact[side.index] >= length * minContact;
+        region.contact[side.index] >= length * limits.minContact;
     return [
       if (region.left <= dx && along(FrameSide.left, boxHeight)) FrameSide.left,
       if (region.top <= dy && along(FrameSide.top, boxWidth)) FrameSide.top,

@@ -11,3 +11,6 @@ doc/internal/
 .idea/
 .vscode/
 .DS_Store
+
+# Real scans with personal data: never publish.
+test/fixtures/

@@ -44,18 +44,22 @@ void main() {
     double coverageAt(double widthInBox) =>
         (widthInBox / 1.12) * (widthInBox / 1.12);
 
-    for (final width in [1.0, 0.9, 0.85, 0.8]) {
+    // Since the 2026-11-10 calibration (limit 0.60): the labelled far scans
+    // were 76-83% of the box, the good ones 90% or more.
+    for (final width in [1.0, 0.95, 0.9]) {
       test('${(width * 100).round()}% of the box is accepted', () {
         expect(quality(coverage: coverageAt(width)).problem, isNull);
       });
     }
 
-    test('60% of the box is too far', () {
-      expect(
-        quality(coverage: coverageAt(0.6)).problem,
-        ScanIssue.documentNotInFrame,
-      );
-    });
+    for (final width in [0.8, 0.76, 0.6]) {
+      test('${(width * 100).round()}% of the box is too far', () {
+        expect(
+          quality(coverage: coverageAt(width)).problem,
+          ScanIssue.documentNotInFrame,
+        );
+      });
+    }
   });
 
   test('the dim, unclear passport photo measured on a device is flagged', () {

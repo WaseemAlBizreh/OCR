@@ -80,6 +80,53 @@ void main() {
       );
     });
 
+    // Read on a device (test/fixtures/scans/idBack/good/
+    // 2026-11-10_back-d-mrz-misread): the card had 8-9% of room on every
+    // side; ML Kit dropped the '<' between MERGHANI and MEKKI.
+    test('one < dropped inside a name that fills the line is not a cut', () {
+      final mrz = parser.parseText(
+        'NAME: MERGHANI MEKKI MERGHANI OSMAN\n'
+        'IDSDNO085936669<<<<<<<<<<<<<<<\n'
+        '920923 1 M2705169SDN<<<<<<<<<<<4\n'
+        '0SMAN<<MERGHANIMEKKI<MERGHANI\n',
+      )!;
+      expect(mrz.passedChecks, 4);
+      expect(mrz.cutOff, isFalse);
+    });
+
+    test('the same name line one short with the other lines cut too is a '
+        'cut', () {
+      // Read on a device (idBack/cut/2026-11-10_back-side-cut): the card ran
+      // past the right edge, so every line lost its end.
+      final mrz = parser.parseText(
+        'IDSDN0085936669<<<<<<<<<<<<<<\n'
+        '9209231 M2705169SDN<<<<<<<<<<\n'
+        '0SMAN<<MERGHANI<MEKKI<MERGHAN\n',
+      )!;
+      expect(mrz.cutOff, isTrue);
+    });
+
+    test('a name line one short is a cut when the check digit is lost', () {
+      expect(
+        MrzParser.isCut([
+          sudanTd1[0],
+          '9209231M2705169SDN<<<<<<<<<<<<',
+          'OSMAN<<MERGHANI<MEKKI<MERGHAN',
+        ], MrzFormat.td1),
+        isTrue,
+      );
+    });
+
+    test('a passport name line one short, other line whole, is not cut', () {
+      expect(
+        MrzParser.isCut([
+          'P<UTOERIKSSON<<ANNA<MARIAMARIAMARIAMARIAMAR',
+          'L898902C36UTO7408122F1204159ZE184226B<<<<<10',
+        ], MrzFormat.td3),
+        isFalse,
+      );
+    });
+
     test('a lost composite digit is a cut', () {
       expect(
         MrzParser.isCut([

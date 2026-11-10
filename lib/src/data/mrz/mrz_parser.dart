@@ -122,7 +122,12 @@ class MrzParser {
   /// - the line holding the composite check digit doesn't end in it: that
   ///   digit is the line's last character, so the end was lost;
   /// - the name line doesn't end in `<`: the name runs into the cut, so its
-  ///   last letters are missing, and no check digit covers a name;
+  ///   last letters are missing, and no check digit covers a name. Except
+  ///   when it is only one character short and every other line is whole
+  ///   (full length, the check line ending in its digit): an edge that cuts
+  ///   the name cuts the other lines' ends too, so that is a `<` dropped
+  ///   inside a name that fills the line (`OSMAN<<MERGHANIMEKKI<MERGHANI`,
+  ///   29 characters, read on a device with the card well inside the photo);
   /// - the first line doesn't start with its document code (`I`, `A` or `C`
   ///   on an ID card, `P` on a passport): the start was lost.
   static bool isCut(List<String> lines, MrzFormat format) {
@@ -134,7 +139,15 @@ class MrzParser {
     };
     bool short(int i) => lines[i].isNotEmpty && lines[i].length < length;
     if (short(checkLine) && lines[checkLine].endsWith('<')) return true;
-    if (short(nameLine) && !lines[nameLine].endsWith('<')) return true;
+    if (short(nameLine) && !lines[nameLine].endsWith('<')) {
+      final othersWhole = [
+        for (var i = 0; i < lines.length; i++)
+          if (i != nameLine) lines[i].length == length,
+      ].every((whole) => whole);
+      final checkDigitKept = RegExp(r'\d$').hasMatch(lines[checkLine]);
+      final oneDropped = lines[nameLine].length == length - 1;
+      if (!(oneDropped && othersWhole && checkDigitKept)) return true;
+    }
     if (short(0) && !codes.contains(lines[0][0])) return true;
     return false;
   }

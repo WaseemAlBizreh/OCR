@@ -130,12 +130,36 @@ class PaddleSudanCardParser {
       final match = _nationalNumber.firstMatch(lines[labelled]);
       if (match != null) return ParserUtils.normalizeDigits(match[0]!);
     }
+    // Label lost (often when the card's top is cut): any line, but never the
+    // address row, which holds the phone, nor a number shaped like a phone
+    // (0 then 1 or 9). OCR adds a digit to the 10-digit phone often enough
+    // to make it 11: on two cut fronts (test/fixtures/scans/idFront/cut/
+    // 2026-11-10_front-side-cut, front-top-cut) the 10-digit phone came out
+    // with an extra digit and was taken as the national number. The number
+    // printed in Latin digits may be split by a space.
     for (final line in lines) {
-      final match = _nationalNumber.firstMatch(line);
-      if (match != null) return ParserUtils.normalizeDigits(match[0]!);
+      if (_isAddressRow(line)) continue;
+      for (final match in _spacedNationalNumber.allMatches(line)) {
+        final digits = ParserUtils.normalizeDigits(
+          match[0]!.replaceAll(' ', ''),
+        );
+        if (!_phoneShaped.hasMatch(digits)) return digits;
+      }
     }
     return null;
   }
+
+  /// 11 digits, single spaces allowed between them.
+  static final _spacedNationalNumber = RegExp(
+    '(?<!$_digit)$_digit(?: ?$_digit){10}(?!$_digit)',
+  );
+
+  /// A Sudanese mobile number (09…, 01…), never a national number.
+  static final _phoneShaped = RegExp(r'^0[19]');
+
+  bool _isAddressRow(String line) =>
+      _label['address']!.hasMatch(line) ||
+      RegExp(r'ت\s*/|/\s*ت|هاتف|tel', caseSensitive: false).hasMatch(line);
 
   String? _dateOfBirth(List<String> lines) {
     final labelled = _indexOf(lines, _label['dob']!);

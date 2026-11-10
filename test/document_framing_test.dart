@@ -206,6 +206,131 @@ void main() {
       },
     );
 
+    group('real 0.4.0 device scans', () {
+      const passport = 125.0 / 88.0;
+      const a4 = 210.0 / 297.0;
+      FrameVerdict? judgeIn(double w, double h, FrameRegion r, double aspect) =>
+          DocumentFraming.fromPhoto(
+            FrameMeasure(width: w, height: h, region: r),
+            aspectRatio: aspect,
+          );
+
+      test('a good passport whose facing page runs past the top and bottom '
+          'is in frame', () {
+        for (final r in [
+          region(
+            share: 0.8927,
+            box: [15, 0, 385, 281],
+            contact: [0, 370, 0, 345],
+          ),
+          region(
+            share: 0.8719,
+            box: [21, 0, 372, 281],
+            contact: [0, 350, 0, 348],
+          ),
+        ]) {
+          final verdict = judgeIn(400, 281, r, passport)!;
+          expect(verdict.cutOff, isFalse);
+          expect(verdict.method, FrameMethod.region);
+        }
+      });
+
+      test('all good passports from the fixtures, facing page along the top '
+          'and bottom, are in frame', () {
+        // test/fixtures/scans/passport/good/2026-11-10_facing-page-a..e.
+        for (final r in [
+          region(
+            share: 0.8927,
+            box: [15, 0, 385, 281],
+            contact: [0, 370, 0, 345],
+          ),
+          region(
+            share: 0.8719,
+            box: [21, 0, 372, 281],
+            contact: [0, 350, 0, 348],
+          ),
+          region(
+            share: 0.8961,
+            box: [15, 0, 388, 281],
+            contact: [0, 373, 0, 346],
+          ),
+          region(
+            share: 0.8615,
+            box: [20, 0, 381, 281],
+            contact: [0, 361, 0, 330],
+          ),
+          region(
+            share: 0.8387,
+            box: [24, 0, 377, 281],
+            contact: [0, 353, 0, 319],
+          ),
+        ]) {
+          final verdict = judgeIn(400, 281, r, passport)!;
+          expect(verdict.cutOff, isFalse, reason: 'box ${r.left}..${r.right}');
+        }
+      });
+
+      test('a half ID front along ONLY the top and bottom edges is cut, on '
+          'the nearer free side', () {
+        // 260 wide, where a card filling the box would be about 358.
+        final verdict = judgeIn(
+          400,
+          253,
+          region(share: 0.64, box: [0, 0, 260, 253], contact: [0, 260, 0, 260]),
+          idAspect,
+        )!;
+        // Left is at 0 but its contact is 0: not along the left edge.
+        expect(verdict.cutSides, [FrameSide.left]);
+        final moved = judgeIn(
+          400,
+          253,
+          region(
+            share: 0.64,
+            box: [130, 0, 390, 253],
+            contact: [0, 260, 0, 260],
+          ),
+          idAspect,
+        )!;
+        expect(moved.cutSides, [FrameSide.right]);
+      });
+
+      test('an area along the left and right that is too short for the card '
+          'is cut', () {
+        // 400 wide: a card in the box would be about 225 high; this is 150.
+        final verdict = judge(
+          region: region(
+            share: 0.5,
+            box: [0, 20, 400, 170],
+            contact: [150, 0, 150, 0],
+          ),
+        )!;
+        expect(verdict.cutSides, [FrameSide.top]);
+      });
+
+      test('an A4 page running off the left edge is still cut off', () {
+        final verdict = judgeIn(
+          400,
+          566,
+          region(share: 0.57, box: [0, 81, 314, 517], contact: [436, 0, 0, 0]),
+          a4,
+        )!;
+        expect(verdict.cutSides, [FrameSide.left]);
+      });
+
+      test('a card past the left and right edges (too close) is not a cut '
+          'by this check alone', () {
+        // Opposite edges: the area is wider than the card can be.
+        final verdict = judge(
+          region: region(
+            share: 0.7,
+            box: [0, 40, 400, 260],
+            contact: [220, 0, 220, 0],
+          ),
+        )!;
+        expect(verdict.cutOff, isFalse);
+      });
+    });
+
     test('a card moved left, lying along the left edge, is cut off', () {
       final verdict = judge(
         region: region(

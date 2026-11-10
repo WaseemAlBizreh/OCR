@@ -1,4 +1,5 @@
 import 'package:idlens/src/domain/scan_issue.dart';
+import 'package:idlens/src/domain/validation_limits.dart';
 
 /// Measurements of the MRZ band of a photo, and what they say about it.
 class ImageQuality {
@@ -39,26 +40,32 @@ class ImageQuality {
   /// |---|---|---|
   /// | 100% | 0.80 | accepted |
   /// | 90% | 0.65 | accepted |
-  /// | 80% | 0.51 | accepted |
-  /// | 72% | 0.42 | the limit |
+  /// | 87% | 0.60 | the limit |
+  /// | 80% | 0.51 | too far |
   /// | 60% | 0.29 | too far |
   ///
-  /// A dealer filling 80–90% of the box placed the document correctly; at
-  /// 60% it is too far to read well (both seen on a device).
-  static const minDocumentCoverage = 0.42;
+  /// Calibrated 2026-11-10 from the labelled scans in test/fixtures/scans
+  /// (test/regression/calibrate_test.dart): far 0.255, 0.463, 0.514, 0.555;
+  /// good 0.653 to 0.932 (16 scans). Every value from 0.56 to 0.64 separates
+  /// them; 0.60 is the middle. It was 0.42, which accepted three of the four
+  /// far scans. Provisional: 4 far samples, two photographed from a screen.
+  static const minDocumentCoverage = 0.60;
 
   /// The most likely reason the document could not be read well (an issue
   /// code), or null when nothing stands out. A document far from the frame
   /// comes first, as its dark surroundings would otherwise read as a dark
   /// photo.
-  ScanIssue? get problem {
-    if (documentCoverage < minDocumentCoverage) {
+  ScanIssue? get problem => problemWith(ValidationLimits.standard);
+
+  /// [problem] judged with other [limits] (regression calibration only).
+  ScanIssue? problemWith(ValidationLimits limits) {
+    if (documentCoverage < limits.minDocumentCoverage) {
       return ScanIssue.documentNotInFrame;
     }
     final notClear =
-        brightness < minBrightness ||
-        glareShare > maxGlareShare ||
-        sharpness < minSharpness;
+        brightness < limits.minBrightness ||
+        glareShare > limits.maxGlareShare ||
+        sharpness < limits.minSharpness;
     return notClear ? ScanIssue.imageNotClear : null;
   }
 

@@ -25,11 +25,45 @@ Files: [`image_quality.dart`](../../lib/src/domain/image_quality.dart),
 
 | Check | Limit | Issue |
 |---|---|---|
-| Distance: document's share of the photo | below `0.42` (about 72% of the box width) | `documentNotInFrame` |
+| Distance: document's share of the photo | below `0.60` (about 87% of the box width) | `documentNotInFrame` |
 | Sharpness | below `60` | `imageNotClear` |
 | Brightness | below `110` | `imageNotClear` |
 | Glare: share of white pixels | above `0.20` | `imageNotClear` |
 | Cut-off: a corner or the bright area within `1.5%` of an edge | any one edge | `documentNotInFrame` |
+
+### Calibration from labelled scans (2026-11-10)
+
+The limits are now checked against the labelled real scans in
+[`test/fixtures/scans/`](../../test/fixtures/scans/README.md). The replay test
+fails on any mismatch, and `test/regression/calibrate_test.dart` sweeps each
+limit (in `ValidationLimits`, today's values by default). Run on 44 scans: 49,
+less 1 label marked unsure and 4 measured before 0.4.0. Not run on a phone.
+
+| Limit | Measured per label | Best range | Value | Why |
+|---|---|---|---|---|
+| `minDocumentCoverage` | far 0.255–0.555 (n=4); good 0.653–0.932 (n=16) | 0.56–0.64 | **0.42 → 0.60** | Middle of the range. 0.42 accepted 3 of the 4 far scans. Provisional: 4 far samples, 2 of them photographed from a screen. |
+| `minSharpness` | blurry/dark 25.9–56.3 (n=4); good 66.7–434.5 (n=16) | 0–65 | 60, kept | The gap between labels, 56.3–66.7, has its middle at 61.5. Values below 56 still match only because those scans are also dark. A good passport at 66.7 is close to the limit. |
+| `minBrightness` | blurry/dark 80.5–100.7 (n=4); good 121.9–153.0 (n=16) | 40–120 | 110, kept | The middle of the gap is 111.3. A wrongSide back at 110.8 is close to the limit (its contentNotFound wins anyway). |
+| `maxGlareShare` | 0.000–0.003 for every label | flat | 0.20, kept | No glare sample exists, so there is no data. |
+| `edgeMargin` | cut 0.000 (n=13); good, not touching 0.025–0.083 | 0–0.033 | 0.015, kept | 0.016 is the middle of the range, so today's value fits. |
+| `minContact` | cut 0.93–1.00 (n=13); blurry 0.15, far 0 (n=1 each) | 0.35–0.90 | 0.5, kept | Inside the range. The lower end comes from too-close scans touching 3 edges, not from a label. No sample of a hand at the edge. |
+| `regionAspectTolerance` | 1 sample per label | 0.175–0.50 | 0.25, kept | Fewer than 3 samples. |
+| `uprightRegionTolerance` | good 0.022–0.121; cut 0.020–0.116 (judged by edges, not shape) | 0.03–0.40 | 0.15, kept | The half fronts that set it (0.20, 0.33) were measured before 0.4.0 and are skipped. |
+| `aspectTolerance` | good 0.003–0.057 (n=10); far 0.012–0.169 | 0.05–0.50 once coverage is 0.60 | 0.20, kept | Inside the range, and it doesn't separate any label. |
+
+- **The new distance limit contradicts an earlier device note.** When the
+  limit went from 0.6 to 0.42 (see IDLENS_BUGS.md, I5), a card filling 80–90%
+  of the box was judged well placed. On 2026-11-10 the user labelled cards at
+  76–83% of the box as too far, and those labels win. A card at 80–86% of the
+  box is now rejected as too far.
+- **More samples needed** before these limits can be trusted: glare (0), dark
+  (1), far (4), blurry (3), a hand at the edge (0), and a real half front
+  along the top and bottom (0).
+- **Known exceptions**, in `knownExceptions` in the replay test:
+  - the MRZ-misread back (an MRZ parser bug, not a limit);
+  - the dark passport judged cut at the top (the label is to recheck).
+  - The pre-0.4.0 certificate cut on the left matches only because its
+    coverage is 0.59: the right issue for the wrong reason.
 
 - **The cut-off limit is measured against the photo's edge, not the guide
   box, and no edge limit can do better.** The camera crop is the box plus a 6%
@@ -49,6 +83,28 @@ Files: [`image_quality.dart`](../../lib/src/domain/image_quality.dart),
   page running off the photo was never cut off by this check. Fixed with
   `borderType: BORDER_REPLICATE`. Not run on a phone: the same scans should now
   show `0` on a side they touch.
+- **A bright area past two opposite edges is not a cut.** If it runs past the
+  top and the bottom (or the left and the right) and leaves room on the other
+  two sides, it is bigger than the document along that axis: an open
+  passport's facing page above the data page, or a light strip of table. It is
+  not the document's outline, so the document is judged in frame. Found on
+  device with 0.4.0: every good passport scan failed, its region running the
+  full photo height (`box [15,0,385,281]`, contact top 370, bottom 345) while
+  the data page had 4-7% of room on the sides. A real cut runs past one edge,
+  or two that meet at a corner, and is still caught.
+  **Guard (2026-11-10):** on the other (free) axis the area is still the
+  document's own size, so it must be at least `minFreeExtent` 0.85 of a
+  document filling the guide box (`boxShare` 1/1.12 of the photo times the
+  document's shape); otherwise it is cut on the nearer free side. Without it,
+  half an ID front along only the top and bottom (260 px wide, where a card in
+  the box is about 358) counted as in frame. Fixtures: the 5
+  `passport/good/2026-11-10_facing-page-*` are 351-373 px against 356 expected
+  (0.98-1.05) and stay in frame; the half front is 0.73. Tests: "all good
+  passports from the fixtures…", "a half ID front along ONLY the top and
+  bottom…", "an area along the left and right that is too short…". A card
+  turned a quarter and running top to bottom is cut by this rule, as it was in
+  0.4.0. Replay unchanged at 43/49. Provisional: one made-up half front, no
+  real top+bottom half front yet.
 - **Distance wins over clarity.** A far card is also dark and blurry, but that is
   not the real cause, so `documentNotInFrame` comes first. It also wins over
   everything else (see section 3).
@@ -62,7 +118,7 @@ Files: [`image_quality.dart`](../../lib/src/domain/image_quality.dart),
   enough: half a card (the rest dark or outside the crop) has a box far from
   the card's width/height ratio (a quarter turn is accepted). Two limits: an
   area filling at least `90%` of its own box is an upright rectangle and must
-  match within `10%`; one filling less (a tilted card fills about 64% at 15
+  match within `15%`; one filling less (a tilted card fills about 64% at 15
   degrees) gets `25%`. Found on real payloads, both `verified` before: a half
   front of 254x239 (ratio 1.06) and one of 303x239 (ratio 1.27, which the first
   25% limit let through); a Sudan ID is 1.59, and the good back in the same
@@ -88,6 +144,7 @@ Files: [`mrz_reader.dart`](../../lib/src/data/mrz/mrz_reader.dart),
 | Best read kept | even if some digits fail, so `mrz.checks` shows the near miss |
 | What is read | `process...` with `DocumentPhoto.camera` (ID card, passport): the photo is cropped to the guide box plus a 6% strip, then the **box** is cut out of that, and the box is what is read and returned (`images`), exactly what the app's preview showed. An MRZ line half outside the box is therefore cut for the reader too and does not read, instead of being rescued from the strip. The wider crop is kept only for the framing and clarity checks (they need the background) and is deleted after the read. A certificate reads the wider crop, because flattening its page needs the strip. A file photo is read as it is. `diagnostics.photoCrop.<side>.readArea` says `box` or `box+strip`. |
 | Cut MRZ | a line missing its first or last characters sets `mrz.cutOff` and gives `documentNotInFrame` (a name has no check digit, so a cut name would pass unseen) |
+| Not a cut (2026-11-10) | a name line **one** character short, not ending in `<`, while every other line is full length and the check line ends in its digit: an edge that cut the name would cut the other lines' ends too, so it is a `<` dropped inside a name that fills the line. Seen on device: `0SMAN<<MERGHANIMEKKI<MERGHANI` (29), card 8-9% inside the photo, failed as cut. Two or more characters short is still a cut. Fixture `idBack/good/2026-11-10_back-d-mrz-misread`; the replay now re-parses `mrzAttempts` (ML Kit reads) with the current parser. |
 
 `MrzValidator` only judges the format. Wrong values inside the MRZ are judged
 later, as `fieldsToCheck`.
